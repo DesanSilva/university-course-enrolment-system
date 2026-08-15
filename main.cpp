@@ -1,9 +1,8 @@
-#include <iostream>
-#include "include/crow_all.h"
+#include "nexusenroll/presentation/api/routes.hpp"
 
-using namespace std;
+int main() {
+    crow::SimpleApp application;
+    nexusenroll::presentation::api::registerRoutes(application);
 
-int main(void) {
-   cout << "Hello World" << endl;
-   return 0;
+    application.port(8080).multithreaded().run();
 }
