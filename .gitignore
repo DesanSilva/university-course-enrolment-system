@@ -4,4 +4,5 @@ test/
 .env
 
 report/
+docs/dev/
 *.o
