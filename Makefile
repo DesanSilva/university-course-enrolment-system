@@ -1,31 +1,29 @@
-CC = g++
-CFLAGS = -Wall -Wextra -Wno-implicit-fallthrough -O2 -Iinclude -I.
-LDFLAGS = -lpthread -lssl -lcrypto
+CXX ?= g++
+CPPFLAGS := -Iinclude
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Wno-implicit-fallthrough
+LDLIBS := -pthread -lssl -lcrypto
 
-TARGET = build/api
-SRC = main.cpp $(shell find src -name '*.cpp')
-HDR = $(shell find include -name '*.hpp' -o -name '*.h')
+TARGET := build/nexusenroll
+SOURCES := main.cpp $(shell find src -type f -name '*.cpp' | sort)
+OBJECTS := $(SOURCES:%.cpp=build/%.o)
+DEPENDENCIES := $(OBJECTS:.o=.d)
 
-# src/foo/bar.c -> build/src/foo/bar.o
-# main.c -> build/main.o
-OBJ = $(SRC:%.cpp=build/%.o)
+.PHONY: all run clean
 
 all: $(TARGET)
 
-# Link objects into executable
-$(TARGET): $(OBJ)
+$(TARGET): $(OBJECTS)
 	@mkdir -p $(dir $@)
-	$(CC) $(OBJ) -o $(TARGET) $(LDFLAGS)
+	$(CXX) $(OBJECTS) -o $@ $(LDLIBS)
 
-# .cpp to .o compilations
-build/%.o: %.cpp $(HDR)
+build/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-clean:
-	rm -rf build
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
 run: $(TARGET)
 	./$(TARGET)
 
-.PHONY: all clean run
+clean:
+	rm -rf build
+
+-include $(DEPENDENCIES)
