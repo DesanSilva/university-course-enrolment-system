@@ -35,6 +35,10 @@ public:
     common::Result<std::optional<business::domain::User>> findUser(common::UserId id) const override;
     common::Result<std::optional<business::domain::Student>> findStudent(common::StudentId id) const override;
     common::Result<std::optional<business::domain::Faculty>> findFaculty(common::FacultyId id) const override;
+    common::Result<std::optional<business::domain::Student>> findStudentByUserId(
+        common::UserId userId) const override;
+    common::Result<std::optional<business::domain::Faculty>> findFacultyByUserId(
+        common::UserId userId) const override;
     common::Result<std::vector<business::domain::User>> users() const override;
     common::Result<std::vector<business::domain::Student>> students() const override;
     common::Result<std::vector<business::domain::Faculty>> facultyMembers() const override;

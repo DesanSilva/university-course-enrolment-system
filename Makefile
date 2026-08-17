@@ -16,10 +16,16 @@ DATA_OBJECTS := $(DATA_SOURCES:%.cpp=build/%.o)
 UNIT_TEST_TARGET := build/tests/domain_tests
 UNIT_TEST_SOURCES := tests/domain_data_tests.cpp
 UNIT_TEST_OBJECTS := $(UNIT_TEST_SOURCES:%.cpp=build/%.o)
+SESSION_SOURCES := $(shell find src/business/sessions -type f -name '*.cpp' | sort)
+SESSION_OBJECTS := $(SESSION_SOURCES:%.cpp=build/%.o)
+BUSINESS_TEST_TARGET := build/tests/business_session_tests
+BUSINESS_TEST_SOURCES := tests/business_session_tests.cpp
+BUSINESS_TEST_OBJECTS := $(BUSINESS_TEST_SOURCES:%.cpp=build/%.o)
 MYSQL_TEST_TARGET := build/tests/mysql_connection_tests
 MYSQL_TEST_SOURCES := $(shell find tests/mysql -type f -name '*.cpp' | sort)
 MYSQL_TEST_OBJECTS := $(MYSQL_TEST_SOURCES:%.cpp=build/%.o)
-DEPENDENCIES := $(sort $(OBJECTS:.o=.d) $(UNIT_TEST_OBJECTS:.o=.d) $(MYSQL_TEST_OBJECTS:.o=.d))
+DEPENDENCIES := $(sort $(OBJECTS:.o=.d) $(UNIT_TEST_OBJECTS:.o=.d) \
+	$(BUSINESS_TEST_OBJECTS:.o=.d) $(MYSQL_TEST_OBJECTS:.o=.d))
 
 .PHONY: all run test unit-test mysql-test mysql-schema mysql-seed clean
 
@@ -38,10 +44,15 @@ run: $(TARGET)
 
 test: unit-test mysql-test
 
-unit-test: $(UNIT_TEST_TARGET)
+unit-test: $(UNIT_TEST_TARGET) $(BUSINESS_TEST_TARGET)
 	./$(UNIT_TEST_TARGET)
+	./$(BUSINESS_TEST_TARGET)
 
 $(UNIT_TEST_TARGET): $(UNIT_TEST_OBJECTS) $(DOMAIN_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CXX) $^ -o $@ -pthread
+
+$(BUSINESS_TEST_TARGET): $(BUSINESS_TEST_OBJECTS) $(SESSION_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CXX) $^ -o $@ -pthread
 
