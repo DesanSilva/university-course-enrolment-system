@@ -104,6 +104,21 @@ void testSeededContracts() {
     const auto alice = users.findUser(UserId{"U-STU-001"});
     require(alice && alice.value() && alice.value()->status == UserStatus::Active,
             "Expected the active student fixture");
+    const auto aliceProfile = users.findStudentByUserId(UserId{"U-STU-001"});
+    require(aliceProfile && aliceProfile.value() &&
+                aliceProfile.value()->id == StudentId{"STU-001"},
+            "Expected the Student profile lookup by User ID");
+    const auto mayaProfile = users.findFacultyByUserId(UserId{"U-FAC-001"});
+    require(mayaProfile && mayaProfile.value() &&
+                mayaProfile.value()->id == FacultyId{"FAC-001"},
+            "Expected the Faculty profile lookup by User ID");
+    const auto administratorStudentProfile =
+        users.findStudentByUserId(UserId{"U-ADM-001"});
+    const auto administratorFacultyProfile =
+        users.findFacultyByUserId(UserId{"U-ADM-001"});
+    require(administratorStudentProfile && !administratorStudentProfile.value() &&
+                administratorFacultyProfile && !administratorFacultyProfile.value(),
+            "An Administrator User should not have a duplicate role profile");
     const auto cs201 = courses.findCourse(CourseId{"COURSE-CS201"});
     require(cs201 && cs201.value() && cs201.value()->prerequisiteCourseIds.size() == 1,
             "Expected the connected prerequisite fixture");

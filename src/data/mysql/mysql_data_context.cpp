@@ -520,6 +520,51 @@ Result<optional<Faculty>> MySqlDataContext::findFaculty(FacultyId id) const {
     });
 }
 
+Result<optional<Student>> MySqlDataContext::findStudentByUserId(UserId userId) const {
+    return implementation_->withConnection<optional<Student>>(
+        [&userId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT student_id, user_id, program_id FROM students WHERE user_id = " +
+                quoted(connection, userId.value()) + " ORDER BY student_id LIMIT 1");
+            if (!rows) {
+                return failure<optional<Student>>(rows.error());
+            }
+            if (rows.value().empty()) {
+                return Result<optional<Student>>::success(nullopt);
+            }
+            const auto& row = rows.value().front();
+            if (row.size() != 3) {
+                return mappingFailure<optional<Student>>(
+                    "A student-by-user query returned an unexpected shape.");
+            }
+            return Result<optional<Student>>::success(
+                Student{StudentId{row[0]}, UserId{row[1]}, ProgramId{row[2]}});
+        });
+}
+
+Result<optional<Faculty>> MySqlDataContext::findFacultyByUserId(UserId userId) const {
+    return implementation_->withConnection<optional<Faculty>>(
+        [&userId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT f.faculty_id, f.user_id, d.name FROM faculty f "
+                "JOIN departments d ON d.department_id = f.department_id WHERE f.user_id = " +
+                quoted(connection, userId.value()) + " ORDER BY f.faculty_id LIMIT 1");
+            if (!rows) {
+                return failure<optional<Faculty>>(rows.error());
+            }
+            if (rows.value().empty()) {
+                return Result<optional<Faculty>>::success(nullopt);
+            }
+            const auto& row = rows.value().front();
+            if (row.size() != 3) {
+                return mappingFailure<optional<Faculty>>(
+                    "A faculty-by-user query returned an unexpected shape.");
+            }
+            return Result<optional<Faculty>>::success(
+                Faculty{FacultyId{row[0]}, UserId{row[1]}, row[2]});
+        });
+}
+
 Result<vector<User>> MySqlDataContext::users() const {
     return implementation_->withConnection<vector<User>>([](MySqlConnection& connection) {
         auto rows = connection.query(

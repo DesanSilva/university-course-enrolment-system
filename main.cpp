@@ -1,3 +1,4 @@
+#include "nexusenroll/business/sessions/demonstration_session_service.hpp"
 #include "nexusenroll/data/mysql/mysql_data_context.hpp"
 #include "nexusenroll/presentation/api/routes.hpp"
 
@@ -20,8 +21,9 @@ int main() {
         return 1;
     }
 
+    nexusenroll::business::sessions::DemonstrationSessionService sessionService(dataContext);
     crow::SimpleApp application;
-    nexusenroll::presentation::api::registerRoutes(application);
+    nexusenroll::presentation::api::registerRoutes(application, sessionService);
 
     application.port(8080).multithreaded().run();
 }

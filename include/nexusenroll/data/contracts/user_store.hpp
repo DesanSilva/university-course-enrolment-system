@@ -15,6 +15,10 @@ public:
     virtual common::Result<std::optional<business::domain::User>> findUser(common::UserId id) const = 0;
     virtual common::Result<std::optional<business::domain::Student>> findStudent(common::StudentId id) const = 0;
     virtual common::Result<std::optional<business::domain::Faculty>> findFaculty(common::FacultyId id) const = 0;
+    virtual common::Result<std::optional<business::domain::Student>> findStudentByUserId(
+        common::UserId userId) const = 0;
+    virtual common::Result<std::optional<business::domain::Faculty>> findFacultyByUserId(
+        common::UserId userId) const = 0;
 
     virtual common::Result<std::vector<business::domain::User>> users() const = 0;
     virtual common::Result<std::vector<business::domain::Student>> students() const = 0;
