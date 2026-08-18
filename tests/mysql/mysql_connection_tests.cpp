@@ -1,4 +1,6 @@
 #include "nexusenroll/data/mysql/mysql_data_context.hpp"
+#include "nexusenroll/business/cqrs/commands/finalize_grades_command.hpp"
+#include "nexusenroll/business/cqrs/commands/submit_grades_command.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -7,6 +9,7 @@
 #include <functional>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -17,6 +20,7 @@ namespace {
 
 using namespace nexusenroll;
 using namespace business::domain;
+using namespace business::cqrs::commands;
 using namespace common;
 using namespace data::contracts;
 using namespace data::mysql;
@@ -60,6 +64,67 @@ void cleanWaitlistConcurrencyFixtures(const MySqlConfig& config) {
         "DELETE FROM waitlist_entries WHERE waitlist_entry_id IN ('WAIT-IT-1', 'WAIT-IT-2')");
     require(static_cast<bool>(result), result ? "" : result.error().message);
 }
+
+void cleanFacultyFixtures(const MySqlConfig& config) {
+    MySqlConnection connection(config);
+    auto result = connection.transaction([](MySqlConnection& database) {
+        auto grades = database.execute(
+            "DELETE g FROM grade_records g JOIN enrollments e ON e.enrollment_id = g.enrollment_id "
+            "WHERE e.enrollment_id IN ('ENR-FAC-IT-1', 'ENR-FAC-IT-2')");
+        if (!grades) return grades;
+        auto enrollments = database.execute(
+            "DELETE FROM enrollments WHERE enrollment_id IN ('ENR-FAC-IT-1', 'ENR-FAC-IT-2')");
+        if (!enrollments) return enrollments;
+        return database.execute(
+            "DELETE FROM course_change_requests WHERE change_request_id = 'CHANGE-FAC-IT'");
+    });
+    require(static_cast<bool>(result), result ? "" : result.error().message);
+}
+
+class FailingEnrollmentStore final : public IEnrollmentStore {
+public:
+    FailingEnrollmentStore(IEnrollmentStore& store, size_t failureNumber)
+        : store_(store), failureNumber_(failureNumber) {}
+
+    Result<optional<Enrollment>> findEnrollment(EnrollmentId id) const override {
+        return store_.findEnrollment(move(id));
+    }
+    Result<optional<Enrollment>> findStudentEnrollment(
+        StudentId studentId, OfferingId offeringId) const override {
+        return store_.findStudentEnrollment(move(studentId), move(offeringId));
+    }
+    Result<vector<Enrollment>> enrollments() const override {
+        return store_.enrollments();
+    }
+    Result<vector<Enrollment>> activeEnrollmentsForStudent(
+        StudentId studentId) const override {
+        return store_.activeEnrollmentsForStudent(move(studentId));
+    }
+    Result<vector<Enrollment>> scheduleEnrollmentsForStudent(
+        StudentId studentId, const string& semester) const override {
+        return store_.scheduleEnrollmentsForStudent(move(studentId), semester);
+    }
+    Result<vector<FacultyRosterEntry>> activeRosterForOffering(
+        OfferingId offeringId) const override {
+        return store_.activeRosterForOffering(move(offeringId));
+    }
+    Result<void> saveEnrollment(Enrollment enrollment) override {
+        ++saveCount_;
+        if (saveCount_ == failureNumber_) {
+            return Result<void>::failure(
+                "TEST_ENROLLMENT_WRITE_FAILED", "Force native finalisation rollback.");
+        }
+        return store_.saveEnrollment(move(enrollment));
+    }
+    Result<void> removeEnrollment(EnrollmentId id) override {
+        return store_.removeEnrollment(move(id));
+    }
+
+private:
+    IEnrollmentStore& store_;
+    size_t failureNumber_;
+    size_t saveCount_{0};
+};
 
 void testSeededContracts() {
     MySqlDataContext context(testConfig(), 1);
@@ -359,6 +424,152 @@ void testTargetedStudentReads() {
             "Targeted waitlist reads should preserve stable order and next position");
 }
 
+void testTargetedFacultyReads() {
+    MySqlDataContext context(testConfig(), 2);
+    ICourseStore& courses = context;
+    IEnrollmentStore& enrollments = context;
+    IGradeStore& grades = context;
+    IChangeRequestStore& changes = context;
+
+    const auto offerings = courses.assignedOfferings(FacultyId{"FAC-001"});
+    require(offerings && offerings.value().size() == 3 &&
+                offerings.value().front().course.id == CourseId{"COURSE-CS101"} &&
+                offerings.value().back().offering.id == OfferingId{"OFFER-CS201-2026S1"} &&
+                offerings.value().back().offering.enrolledCount == 1,
+            "Assigned-offering reads should be connected, stable, and occupancy-derived");
+    const auto teaches = courses.facultyTeachesCourse(
+        FacultyId{"FAC-001"}, CourseId{"COURSE-CS201"});
+    const auto doesNotTeach = courses.facultyTeachesCourse(
+        FacultyId{"FAC-002"}, CourseId{"COURSE-CS201"});
+    require(teaches && teaches.value() && doesNotTeach && !doesNotTeach.value(),
+            "Faculty-course ownership reads should be targeted");
+
+    const auto roster = enrollments.activeRosterForOffering(
+        OfferingId{"OFFER-CS201-2026S1"});
+    const auto emptyRoster = enrollments.activeRosterForOffering(
+        OfferingId{"OFFER-BUS301-2026S1"});
+    require(roster && roster.value().size() == 1 &&
+                roster.value().front().enrollment.studentId == StudentId{"STU-001"} &&
+                roster.value().front().studentName == "Alice Perera" &&
+                roster.value().front().studentEmail == "alice@nexus.edu" &&
+                emptyRoster && emptyRoster.value().empty(),
+            "Targeted roster reads should preserve active contact data and empty success");
+
+    const auto ungraded = grades.gradeStateForOffering(
+        OfferingId{"OFFER-CS201-2026S1"});
+    const auto submitted = grades.gradeStateForOffering(
+        OfferingId{"OFFER-CS101-2025S2"});
+    require(ungraded && ungraded.value().size() == 1 && !ungraded.value().front().grade &&
+                submitted && submitted.value().size() == 1 &&
+                submitted.value().front().grade &&
+                submitted.value().front().grade->lifecycle == GradeLifecycle::Submitted,
+            "Grade-state reads should distinguish ungraded and persisted Submitted grades");
+
+    const auto requests = changes.changeRequestsForFaculty(FacultyId{"FAC-002"});
+    const auto otherRequests = changes.changeRequestsForFaculty(FacultyId{"FAC-001"});
+    require(requests && requests.value().size() == 1 &&
+                requests.value().front().id == ChangeRequestId{"CHANGE-001"} &&
+                otherRequests && otherRequests.value().empty(),
+            "Faculty change-request reads should be submitter-specific and stable");
+}
+
+void testFacultyWritesAndAtomicFinalization() {
+    const MySqlConfig config = testConfig();
+    cleanFacultyFixtures(config);
+    try {
+        MySqlDataContext context(config, 2);
+        IEnrollmentStore& enrollments = context;
+        IGradeStore& grades = context;
+        IChangeRequestStore& changes = context;
+
+        const auto firstEnrollmentSaved = enrollments.saveEnrollment(
+            {EnrollmentId{"ENR-FAC-IT-1"}, StudentId{"STU-001"},
+             OfferingId{"OFFER-BUS301-2026S1"}, EnrollmentStatus::Active});
+        require(static_cast<bool>(firstEnrollmentSaved),
+                "The first Faculty integration enrolment should be created");
+        const auto secondEnrollmentSaved = enrollments.saveEnrollment(
+            {EnrollmentId{"ENR-FAC-IT-2"}, StudentId{"STU-002"},
+             OfferingId{"OFFER-BUS301-2026S1"}, EnrollmentStatus::Active});
+        require(static_cast<bool>(secondEnrollmentSaved),
+                "The second Faculty integration enrolment should be created");
+
+        SubmitGradesCommand submit(
+            FacultyId{"FAC-002"}, OfferingId{"OFFER-BUS301-2026S1"},
+            {{StudentId{"STU-001"}, "A"}, {StudentId{"STU-002"}, "B"}},
+            context, context, context, context, context);
+        require(submit.execute() && submit.outcome().accepted.size() == 2,
+                "The real MySQL grade batch should store both Pending grades");
+        const auto pending = grades.pendingGradesForOffering(
+            OfferingId{"OFFER-BUS301-2026S1"});
+        require(pending && pending.value().size() == 2,
+                "The targeted Pending-grade read should return the complete batch");
+
+        FailingEnrollmentStore failingEnrollments(enrollments, 2);
+        FinalizeGradesCommand failedFinalize(
+            FacultyId{"FAC-002"}, OfferingId{"OFFER-BUS301-2026S1"},
+            context, context, failingEnrollments, context, context);
+        const auto failedFinalizeResult = failedFinalize.execute();
+        const auto pendingAfterRollback = grades.pendingGradesForOffering(
+            OfferingId{"OFFER-BUS301-2026S1"});
+        const auto firstAfterRollback = enrollments.findEnrollment(
+            EnrollmentId{"ENR-FAC-IT-1"});
+        const auto secondAfterRollback = enrollments.findEnrollment(
+            EnrollmentId{"ENR-FAC-IT-2"});
+        require(!failedFinalizeResult &&
+                    failedFinalizeResult.error().code == "TEST_ENROLLMENT_WRITE_FAILED" &&
+                    failedFinalize.finalizedCount() == 0 &&
+                    pendingAfterRollback && pendingAfterRollback.value().size() == 2 &&
+                    firstAfterRollback && firstAfterRollback.value() &&
+                    firstAfterRollback.value()->status == EnrollmentStatus::Active &&
+                    secondAfterRollback && secondAfterRollback.value() &&
+                    secondAfterRollback.value()->status == EnrollmentStatus::Active,
+                "A real MySQL finalisation failure should roll back every grade and enrolment");
+
+        FinalizeGradesCommand finalize(
+            FacultyId{"FAC-002"}, OfferingId{"OFFER-BUS301-2026S1"},
+            context, context, context, context, context);
+        require(finalize.execute() && finalize.finalizedCount() == 2,
+                "The real MySQL finalisation should commit the complete batch");
+        const auto first = enrollments.findEnrollment(EnrollmentId{"ENR-FAC-IT-1"});
+        const auto second = enrollments.findEnrollment(EnrollmentId{"ENR-FAC-IT-2"});
+        require(first && first.value() && second && second.value() &&
+                    first.value()->status == EnrollmentStatus::Completed &&
+                    second.value()->status == EnrollmentStatus::Completed &&
+                    grades.pendingGradesForOffering(OfferingId{"OFFER-BUS301-2026S1"}).value().empty(),
+                "Finalisation should atomically complete every connected enrolment");
+
+        const auto gradeCollision = grades.createGradeRecord(
+            {GradeRecordId{"GRADE-001"}, StudentId{"STU-001"},
+             OfferingId{"OFFER-CS201-2026S1"}, CourseId{"COURSE-CS201"},
+             "F", GradeLifecycle::Pending});
+        const auto originalGrade = grades.findGradeRecord(GradeRecordId{"GRADE-001"});
+        require(!gradeCollision && gradeCollision.error().code == "PERSISTENCE_ID_CONFLICT" &&
+                    originalGrade && originalGrade.value() && originalGrade.value()->grade == "A",
+                "A create-only GradeRecord collision must not overwrite the seeded grade");
+
+        const auto changeCreated = changes.createChangeRequest(
+            {ChangeRequestId{"CHANGE-FAC-IT"}, FacultyId{"FAC-001"},
+             CourseId{"COURSE-CS201"}, nullopt, CourseChangeType::Description,
+             CourseChangeStatus::Pending, "Integration description"});
+        require(static_cast<bool>(changeCreated),
+                "A targeted Pending course-change request should be created");
+        const auto changeCollision = changes.createChangeRequest(
+            {ChangeRequestId{"CHANGE-001"}, FacultyId{"FAC-001"},
+             CourseId{"COURSE-CS201"}, nullopt, CourseChangeType::Description,
+             CourseChangeStatus::Pending, "Must not overwrite"});
+        const auto originalChange = changes.findChangeRequest(ChangeRequestId{"CHANGE-001"});
+        require(!changeCollision &&
+                    changeCollision.error().code == "PERSISTENCE_ID_CONFLICT" &&
+                    originalChange && originalChange.value() &&
+                    originalChange.value()->requestedValue == "60",
+                "A create-only ChangeRequest collision must not overwrite a persisted request");
+    } catch (...) {
+        cleanFacultyFixtures(config);
+        throw;
+    }
+    cleanFacultyFixtures(config);
+}
+
 void testTransactionCommitAndRollback() {
     MySqlDataContext context(testConfig(), 2);
     IUserStore& users = context;
@@ -593,6 +804,8 @@ int main() {
         {"stable reads and referential integrity", testStableReadsAndReferentialIntegrity},
         {"fail-closed unique-key collisions", testFailClosedUniqueKeyCollisions},
         {"targeted Student reads", testTargetedStudentReads},
+        {"targeted Faculty reads", testTargetedFacultyReads},
+        {"Faculty writes and atomic finalisation", testFacultyWritesAndAtomicFinalization},
         {"transaction commit and rollback", testTransactionCommitAndRollback},
         {"cross-context lease restoration", testCrossContextLeaseRestoration},
         {"concurrent capacity locking", testConcurrentCapacityLocking},

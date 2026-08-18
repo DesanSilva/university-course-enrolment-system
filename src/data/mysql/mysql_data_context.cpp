@@ -295,6 +295,23 @@ Result<void> ensureAffected(MySqlConnection& connection, const string& descripti
     return Result<void>::success();
 }
 
+Result<void> ensureInserted(MySqlConnection& connection, const string& description) {
+    auto rows = connection.query("SELECT ROW_COUNT()");
+    if (!rows) {
+        return failure<void>(rows.error());
+    }
+    if (rows.value().size() != 1 || rows.value().front().size() != 1) {
+        return mappingFailure<void>(
+            description + " insert check returned an unexpected shape.");
+    }
+    if (rows.value().front().front() != "1") {
+        return Result<void>::failure(
+            "PERSISTENCE_ID_CONFLICT",
+            description + " conflicts with another persisted record.");
+    }
+    return Result<void>::success();
+}
+
 Result<void> ensurePersistedPrimary(
     MySqlConnection& connection,
     const string& sql,
@@ -1043,6 +1060,67 @@ Result<void> MySqlDataContext::saveCourse(Course course) {
     });
 }
 
+Result<vector<FacultyOfferingItem>> MySqlDataContext::assignedOfferings(
+    FacultyId facultyId) const {
+    return implementation_->withConnection<vector<FacultyOfferingItem>>(
+        [this, &facultyId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT o.offering_id FROM course_offerings o "
+                "JOIN semesters s ON s.semester_id = o.semester_id "
+                "JOIN courses c ON c.course_id = o.course_id WHERE o.instructor_id = " +
+                quoted(connection, facultyId.value()) +
+                " ORDER BY s.code, c.code, o.offering_id");
+            if (!rows) {
+                return failure<vector<FacultyOfferingItem>>(rows.error());
+            }
+            vector<FacultyOfferingItem> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 1) {
+                    return mappingFailure<vector<FacultyOfferingItem>>(
+                        "An assigned-offering query returned an unexpected shape.");
+                }
+                auto offering = findOffering(OfferingId{row[0]});
+                if (!offering) {
+                    return failure<vector<FacultyOfferingItem>>(offering.error());
+                }
+                if (!offering.value()) {
+                    return mappingFailure<vector<FacultyOfferingItem>>(
+                        "An assigned offering disappeared during its read.");
+                }
+                auto course = findCourse(offering.value()->courseId);
+                if (!course) {
+                    return failure<vector<FacultyOfferingItem>>(course.error());
+                }
+                if (!course.value()) {
+                    return mappingFailure<vector<FacultyOfferingItem>>(
+                        "An assigned offering has no connected course.");
+                }
+                values.push_back({*course.value(), *offering.value()});
+            }
+            return Result<vector<FacultyOfferingItem>>::success(move(values));
+        });
+}
+
+Result<bool> MySqlDataContext::facultyTeachesCourse(
+    FacultyId facultyId,
+    CourseId courseId) const {
+    return implementation_->withConnection<bool>(
+        [&facultyId, &courseId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT EXISTS(SELECT 1 FROM course_offerings WHERE instructor_id = " +
+                quoted(connection, facultyId.value()) + " AND course_id = " +
+                quoted(connection, courseId.value()) + ")");
+            if (!rows) {
+                return failure<bool>(rows.error());
+            }
+            if (rows.value().size() != 1 || rows.value().front().size() != 1) {
+                return mappingFailure<bool>(
+                    "A Faculty-course ownership query returned an unexpected shape.");
+            }
+            return Result<bool>::success(rows.value().front().front() == "1");
+        });
+}
+
 Result<void> MySqlDataContext::saveOffering(CourseOffering offering) {
     return implementation_->atomically([&offering](MySqlConnection& connection) {
         if (offering.id.empty() || offering.courseId.empty() || offering.semester.empty() ||
@@ -1393,6 +1471,35 @@ Result<void> MySqlDataContext::saveEnrollment(Enrollment enrollment) {
     });
 }
 
+Result<vector<FacultyRosterEntry>> MySqlDataContext::activeRosterForOffering(
+    OfferingId offeringId) const {
+    return implementation_->withConnection<vector<FacultyRosterEntry>>(
+        [&offeringId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT e.enrollment_id, e.student_id, e.offering_id, e.status, "
+                "u.name, u.email FROM enrollments e "
+                "JOIN students s ON s.student_id = e.student_id "
+                "JOIN users u ON u.user_id = s.user_id WHERE e.offering_id = " +
+                quoted(connection, offeringId.value()) +
+                " AND e.status = 'ACTIVE' ORDER BY e.student_id, e.enrollment_id");
+            if (!rows) {
+                return failure<vector<FacultyRosterEntry>>(rows.error());
+            }
+            vector<FacultyRosterEntry> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 6) {
+                    return mappingFailure<vector<FacultyRosterEntry>>(
+                        "A Faculty roster query returned an unexpected shape.");
+                }
+                values.push_back({
+                    {EnrollmentId{row[0]}, StudentId{row[1]}, OfferingId{row[2]},
+                     parseEnrollmentStatus(row[3])},
+                    row[4], row[5]});
+            }
+            return Result<vector<FacultyRosterEntry>>::success(move(values));
+        });
+}
+
 Result<void> MySqlDataContext::removeEnrollment(EnrollmentId id) {
     return implementation_->atomically([&id](MySqlConnection& connection) {
         auto removed = connection.execute(
@@ -1484,7 +1591,136 @@ Result<vector<GradeRecord>> MySqlDataContext::submittedGradesForStudent(
                                   parseGradeLifecycle(row[5])});
             }
             return Result<vector<GradeRecord>>::success(move(values));
+    });
+}
+
+Result<optional<GradeRecord>> MySqlDataContext::findStudentGradeRecord(
+    StudentId studentId,
+    OfferingId offeringId) const {
+    return implementation_->withConnection<optional<GradeRecord>>(
+        [&studentId, &offeringId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT g.grade_record_id, e.student_id, e.offering_id, o.course_id, "
+                "g.grade, g.lifecycle FROM grade_records g "
+                "JOIN enrollments e ON e.enrollment_id = g.enrollment_id "
+                "JOIN course_offerings o ON o.offering_id = e.offering_id "
+                "WHERE e.student_id = " + quoted(connection, studentId.value()) +
+                " AND e.offering_id = " + quoted(connection, offeringId.value()) +
+                " LIMIT 1");
+            if (!rows) {
+                return failure<optional<GradeRecord>>(rows.error());
+            }
+            if (rows.value().empty()) {
+                return Result<optional<GradeRecord>>::success(nullopt);
+            }
+            const auto& row = rows.value().front();
+            if (row.size() != 6) {
+                return mappingFailure<optional<GradeRecord>>(
+                    "A Student-offering grade query returned an unexpected shape.");
+            }
+            return Result<optional<GradeRecord>>::success(GradeRecord{
+                GradeRecordId{row[0]}, StudentId{row[1]}, OfferingId{row[2]},
+                CourseId{row[3]}, row[4], parseGradeLifecycle(row[5])});
         });
+}
+
+Result<vector<FacultyGradeStateEntry>> MySqlDataContext::gradeStateForOffering(
+    OfferingId offeringId) const {
+    return implementation_->withConnection<vector<FacultyGradeStateEntry>>(
+        [&offeringId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT e.enrollment_id, e.student_id, e.offering_id, e.status, "
+                "COALESCE(g.grade_record_id, ''), COALESCE(g.grade, ''), "
+                "COALESCE(g.lifecycle, ''), o.course_id FROM enrollments e "
+                "JOIN course_offerings o ON o.offering_id = e.offering_id "
+                "LEFT JOIN grade_records g ON g.enrollment_id = e.enrollment_id "
+                "WHERE e.offering_id = " + quoted(connection, offeringId.value()) +
+                " AND e.status <> 'DROPPED' ORDER BY e.student_id, e.enrollment_id");
+            if (!rows) {
+                return failure<vector<FacultyGradeStateEntry>>(rows.error());
+            }
+            vector<FacultyGradeStateEntry> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 8) {
+                    return mappingFailure<vector<FacultyGradeStateEntry>>(
+                        "A Faculty grade-state query returned an unexpected shape.");
+                }
+                Enrollment enrollment{
+                    EnrollmentId{row[0]}, StudentId{row[1]}, OfferingId{row[2]},
+                    parseEnrollmentStatus(row[3])};
+                optional<GradeRecord> grade;
+                if (!row[4].empty()) {
+                    if (row[5].empty() || row[6].empty()) {
+                        return mappingFailure<vector<FacultyGradeStateEntry>>(
+                            "A stored grade-state row is incomplete.");
+                    }
+                    grade = GradeRecord{
+                        GradeRecordId{row[4]}, enrollment.studentId, enrollment.offeringId,
+                        CourseId{row[7]}, row[5], parseGradeLifecycle(row[6])};
+                }
+                values.push_back({move(enrollment), move(grade)});
+            }
+            return Result<vector<FacultyGradeStateEntry>>::success(move(values));
+        });
+}
+
+Result<vector<GradeRecord>> MySqlDataContext::pendingGradesForOffering(
+    OfferingId offeringId) const {
+    return implementation_->withConnection<vector<GradeRecord>>(
+        [&offeringId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT g.grade_record_id, e.student_id, e.offering_id, o.course_id, "
+                "g.grade, g.lifecycle FROM grade_records g "
+                "JOIN enrollments e ON e.enrollment_id = g.enrollment_id "
+                "JOIN course_offerings o ON o.offering_id = e.offering_id "
+                "WHERE e.offering_id = " + quoted(connection, offeringId.value()) +
+                " AND g.lifecycle = 'PENDING' ORDER BY e.student_id, g.grade_record_id");
+            if (!rows) {
+                return failure<vector<GradeRecord>>(rows.error());
+            }
+            vector<GradeRecord> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 6) {
+                    return mappingFailure<vector<GradeRecord>>(
+                        "A Pending-grade query returned an unexpected shape.");
+                }
+                values.push_back({
+                    GradeRecordId{row[0]}, StudentId{row[1]}, OfferingId{row[2]},
+                    CourseId{row[3]}, row[4], parseGradeLifecycle(row[5])});
+            }
+            return Result<vector<GradeRecord>>::success(move(values));
+        });
+}
+
+Result<void> MySqlDataContext::createGradeRecord(GradeRecord record) {
+    return implementation_->atomically([&record](MySqlConnection& connection) {
+        if (record.id.empty() || record.studentId.empty() || record.offeringId.empty() ||
+            record.courseId.empty() || record.grade.empty() ||
+            record.lifecycle != GradeLifecycle::Pending) {
+            return Result<void>::failure(
+                "INVALID_RECORD", "A new grade requires connected IDs, a value, and Pending lifecycle.");
+        }
+        auto enrollment = lookupSingleValue(
+            connection,
+            "SELECT e.enrollment_id FROM enrollments e JOIN course_offerings o "
+            "ON o.offering_id = e.offering_id WHERE e.student_id = " +
+                quoted(connection, record.studentId.value()) + " AND e.offering_id = " +
+                quoted(connection, record.offeringId.value()) + " AND o.course_id = " +
+                quoted(connection, record.courseId.value()) + " LIMIT 1",
+            "The grade enrolment");
+        if (!enrollment) {
+            return failure<void>(enrollment.error());
+        }
+        auto inserted = connection.execute(
+            "INSERT INTO grade_records (grade_record_id, enrollment_id, grade, lifecycle) VALUES (" +
+            quoted(connection, record.id.value()) + ", " + quoted(connection, enrollment.value()) +
+            ", " + quoted(connection, record.grade) + ", 'PENDING') "
+            "ON DUPLICATE KEY UPDATE grade_record_id = grade_record_id");
+        if (!inserted) {
+            return inserted;
+        }
+        return ensureInserted(connection, "The new grade ID or enrolment");
+    });
 }
 
 Result<void> MySqlDataContext::saveGradeRecord(GradeRecord record) {
@@ -1512,9 +1748,11 @@ Result<void> MySqlDataContext::saveGradeRecord(GradeRecord record) {
             quoted(connection, gradeLifecycleSql(record.lifecycle)) +
             ") ON DUPLICATE KEY UPDATE grade = IF("
             "grade_record_id = VALUES(grade_record_id) AND "
-            "enrollment_id = VALUES(enrollment_id), VALUES(grade), grade), "
+            "enrollment_id = VALUES(enrollment_id) AND lifecycle = 'PENDING', "
+            "VALUES(grade), grade), "
             "lifecycle = IF(grade_record_id = VALUES(grade_record_id) AND "
-            "enrollment_id = VALUES(enrollment_id), VALUES(lifecycle), lifecycle)");
+            "enrollment_id = VALUES(enrollment_id) AND lifecycle = 'PENDING', "
+            "VALUES(lifecycle), lifecycle)");
         if (!saved) {
             return saved;
         }
@@ -1591,7 +1829,67 @@ Result<vector<CourseChangeRequest>> MySqlDataContext::changeRequests() const {
                 }
             }
             return Result<vector<CourseChangeRequest>>::success(move(values));
+    });
+}
+
+Result<vector<CourseChangeRequest>> MySqlDataContext::changeRequestsForFaculty(
+    FacultyId facultyId) const {
+    return implementation_->withConnection<vector<CourseChangeRequest>>(
+        [this, &facultyId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT change_request_id FROM course_change_requests WHERE faculty_id = " +
+                quoted(connection, facultyId.value()) +
+                " ORDER BY course_id, COALESCE(offering_id, ''), change_type, change_request_id");
+            if (!rows) {
+                return failure<vector<CourseChangeRequest>>(rows.error());
+            }
+            vector<CourseChangeRequest> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 1) {
+                    return mappingFailure<vector<CourseChangeRequest>>(
+                        "A Faculty change-request query returned an unexpected shape.");
+                }
+                auto request = findChangeRequest(ChangeRequestId{row[0]});
+                if (!request) {
+                    return failure<vector<CourseChangeRequest>>(request.error());
+                }
+                if (!request.value()) {
+                    return mappingFailure<vector<CourseChangeRequest>>(
+                        "A Faculty change request disappeared during its read.");
+                }
+                values.push_back(*request.value());
+            }
+            return Result<vector<CourseChangeRequest>>::success(move(values));
         });
+}
+
+Result<void> MySqlDataContext::createChangeRequest(CourseChangeRequest request) {
+    return implementation_->atomically([&request](MySqlConnection& connection) {
+        if (request.id.empty() || request.facultyId.empty() || request.courseId.empty() ||
+            (request.requestedValue.empty() &&
+             request.type != CourseChangeType::Prerequisites) ||
+            request.status != CourseChangeStatus::Pending) {
+            return Result<void>::failure(
+                "INVALID_RECORD", "A new course-change request requires IDs, a value, and Pending status.");
+        }
+        const string offeringSql = request.offeringId
+                                            ? quoted(connection, request.offeringId->value())
+                                            : "NULL";
+        auto inserted = connection.execute(
+            "INSERT INTO course_change_requests "
+            "(change_request_id, faculty_id, course_id, offering_id, change_type, "
+            "requested_value, status) VALUES (" +
+            quoted(connection, request.id.value()) + ", " +
+            quoted(connection, request.facultyId.value()) + ", " +
+            quoted(connection, request.courseId.value()) + ", " + offeringSql + ", " +
+            quoted(connection, changeTypeSql(request.type)) + ", " +
+            quoted(connection, request.requestedValue) + ", 'PENDING') "
+            "ON DUPLICATE KEY UPDATE change_request_id = change_request_id");
+        if (!inserted) {
+            return inserted;
+        }
+        return ensureInserted(connection, "The new course-change request ID");
+    });
 }
 
 Result<void> MySqlDataContext::saveChangeRequest(CourseChangeRequest request) {

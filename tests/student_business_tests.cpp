@@ -137,6 +137,12 @@ public:
         }
         return Result<vector<CatalogueItem>>::success(move(matches));
     }
+    Result<vector<FacultyOfferingItem>> assignedOfferings(FacultyId) const override {
+        return Result<vector<FacultyOfferingItem>>::success({});
+    }
+    Result<bool> facultyTeachesCourse(FacultyId, CourseId) const override {
+        return Result<bool>::success(false);
+    }
     Result<void> saveCourse(Course value) override { return save(courseValues, move(value)); }
     Result<void> saveOffering(CourseOffering value) override {
         return save(offeringValues, move(value));
@@ -166,6 +172,9 @@ public:
         StudentId studentId, const string& semester) const override {
         if (readError) return failure<vector<Enrollment>>(*readError);
         return selectedEnrollments(studentId, semester, false);
+    }
+    Result<vector<FacultyRosterEntry>> activeRosterForOffering(OfferingId) const override {
+        return Result<vector<FacultyRosterEntry>>::success({});
     }
     Result<void> saveEnrollment(Enrollment value) override {
         return save(enrollmentValues, move(value));
@@ -210,6 +219,27 @@ public:
                    enrollment->status == EnrollmentStatus::Completed;
         });
         return Result<vector<GradeRecord>>::success(move(values));
+    }
+    Result<optional<GradeRecord>> findStudentGradeRecord(
+        StudentId studentId, OfferingId offeringId) const override {
+        const auto found = find_if(gradeValues.begin(), gradeValues.end(), [&](const GradeRecord& value) {
+            return value.studentId == studentId && value.offeringId == offeringId;
+        });
+        return Result<optional<GradeRecord>>::success(
+            found == gradeValues.end() ? optional<GradeRecord>{} : optional<GradeRecord>{*found});
+    }
+    Result<vector<FacultyGradeStateEntry>> gradeStateForOffering(OfferingId) const override {
+        return Result<vector<FacultyGradeStateEntry>>::success({});
+    }
+    Result<vector<GradeRecord>> pendingGradesForOffering(OfferingId offeringId) const override {
+        vector<GradeRecord> values;
+        copy_if(gradeValues.begin(), gradeValues.end(), back_inserter(values), [&](const GradeRecord& value) {
+            return value.offeringId == offeringId && value.lifecycle == GradeLifecycle::Pending;
+        });
+        return Result<vector<GradeRecord>>::success(move(values));
+    }
+    Result<void> createGradeRecord(GradeRecord value) override {
+        return save(gradeValues, move(value));
     }
     Result<void> saveGradeRecord(GradeRecord value) override {
         return save(gradeValues, move(value));

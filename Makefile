@@ -27,11 +27,22 @@ STUDENT_BUSINESS_OBJECTS := $(STUDENT_BUSINESS_SOURCES:%.cpp=build/%.o)
 STUDENT_BUSINESS_TEST_TARGET := build/tests/student_business_tests
 STUDENT_BUSINESS_TEST_SOURCES := tests/student_business_tests.cpp
 STUDENT_BUSINESS_TEST_OBJECTS := $(STUDENT_BUSINESS_TEST_SOURCES:%.cpp=build/%.o)
+FACULTY_BUSINESS_SOURCES := $(shell find src/business/cqrs src/business/domain \
+	src/business/notifications \
+	-type f -name '*.cpp' | sort)
+FACULTY_BUSINESS_OBJECTS := $(FACULTY_BUSINESS_SOURCES:%.cpp=build/%.o)
+FACULTY_BUSINESS_TEST_TARGET := build/tests/faculty_business_tests
+FACULTY_BUSINESS_TEST_SOURCES := tests/faculty_business_tests.cpp
+FACULTY_BUSINESS_TEST_OBJECTS := $(FACULTY_BUSINESS_TEST_SOURCES:%.cpp=build/%.o)
 MYSQL_TEST_TARGET := build/tests/mysql_connection_tests
 MYSQL_TEST_SOURCES := $(shell find tests/mysql -type f -name '*.cpp' | sort)
 MYSQL_TEST_OBJECTS := $(MYSQL_TEST_SOURCES:%.cpp=build/%.o)
+MYSQL_BUSINESS_SOURCES := src/business/cqrs/commands/faculty_commands.cpp \
+	src/business/cqrs/faculty_validation.cpp src/business/cqrs/persistent_id.cpp
+MYSQL_BUSINESS_OBJECTS := $(MYSQL_BUSINESS_SOURCES:%.cpp=build/%.o)
 DEPENDENCIES := $(sort $(OBJECTS:.o=.d) $(UNIT_TEST_OBJECTS:.o=.d) \
 	$(BUSINESS_TEST_OBJECTS:.o=.d) $(STUDENT_BUSINESS_TEST_OBJECTS:.o=.d) \
+	$(FACULTY_BUSINESS_TEST_OBJECTS:.o=.d) \
 	$(MYSQL_TEST_OBJECTS:.o=.d))
 
 .PHONY: all run test unit-test mysql-test mysql-schema mysql-seed clean
@@ -51,10 +62,12 @@ run: $(TARGET)
 
 test: unit-test mysql-test
 
-unit-test: $(UNIT_TEST_TARGET) $(BUSINESS_TEST_TARGET) $(STUDENT_BUSINESS_TEST_TARGET)
+unit-test: $(UNIT_TEST_TARGET) $(BUSINESS_TEST_TARGET) $(STUDENT_BUSINESS_TEST_TARGET) \
+	$(FACULTY_BUSINESS_TEST_TARGET)
 	./$(UNIT_TEST_TARGET)
 	./$(BUSINESS_TEST_TARGET)
 	./$(STUDENT_BUSINESS_TEST_TARGET)
+	./$(FACULTY_BUSINESS_TEST_TARGET)
 
 $(UNIT_TEST_TARGET): $(UNIT_TEST_OBJECTS) $(DOMAIN_OBJECTS)
 	@mkdir -p $(dir $@)
@@ -68,10 +81,14 @@ $(STUDENT_BUSINESS_TEST_TARGET): $(STUDENT_BUSINESS_TEST_OBJECTS) $(STUDENT_BUSI
 	@mkdir -p $(dir $@)
 	$(CXX) $^ -o $@ -pthread
 
+$(FACULTY_BUSINESS_TEST_TARGET): $(FACULTY_BUSINESS_TEST_OBJECTS) $(FACULTY_BUSINESS_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CXX) $^ -o $@ -pthread
+
 mysql-test: $(MYSQL_TEST_TARGET)
 	./$(MYSQL_TEST_TARGET)
 
-$(MYSQL_TEST_TARGET): $(MYSQL_TEST_OBJECTS) $(DATA_OBJECTS)
+$(MYSQL_TEST_TARGET): $(MYSQL_TEST_OBJECTS) $(DATA_OBJECTS) $(MYSQL_BUSINESS_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CXX) $^ -o $@ -pthread $(MYSQL_LDLIBS)
 
