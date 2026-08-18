@@ -14,13 +14,17 @@ struct Error {
 
 template <typename T>
 class Result {
+    struct SuccessTag {};
+    struct FailureTag {};
+
 public:
     static Result success(T value) {
-        return Result(std::move(value), std::nullopt);
+        return Result(SuccessTag{}, std::move(value));
     }
 
     static Result failure(std::string code, std::string message) {
-        return Result(std::nullopt, Error{std::move(code), std::move(message)});
+        return Result(
+            FailureTag{}, Error{std::move(code), std::move(message)});
     }
 
     bool hasValue() const noexcept { return value_.has_value(); }
@@ -48,8 +52,8 @@ public:
     }
 
 private:
-    Result(std::optional<T> value, std::optional<Error> error)
-        : value_(std::move(value)), error_(std::move(error)) {}
+    Result(SuccessTag, T value) : value_(std::move(value)) {}
+    Result(FailureTag, Error error) : error_(std::move(error)) {}
 
     std::optional<T> value_;
     std::optional<Error> error_;
@@ -58,7 +62,7 @@ private:
 template <>
 class Result<void> {
 public:
-    static Result success() { return Result(std::nullopt); }
+    static Result success() { return Result(); }
 
     static Result failure(std::string code, std::string message) {
         return Result(Error{std::move(code), std::move(message)});
@@ -75,7 +79,8 @@ public:
     }
 
 private:
-    explicit Result(std::optional<Error> error) : error_(std::move(error)) {}
+    Result() = default;
+    explicit Result(Error error) : error_(std::move(error)) {}
 
     std::optional<Error> error_;
 };
