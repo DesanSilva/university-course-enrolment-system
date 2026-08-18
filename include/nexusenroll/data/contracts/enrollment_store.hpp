@@ -23,6 +23,8 @@ public:
     virtual common::Result<std::vector<business::domain::Enrollment>> scheduleEnrollmentsForStudent(
         common::StudentId studentId,
         const std::string& semester) const = 0;
+    virtual common::Result<std::vector<business::domain::FacultyRosterEntry>> activeRosterForOffering(
+        common::OfferingId offeringId) const = 0;
     virtual common::Result<void> saveEnrollment(business::domain::Enrollment enrollment) = 0;
     virtual common::Result<void> removeEnrollment(common::EnrollmentId id) = 0;
 };

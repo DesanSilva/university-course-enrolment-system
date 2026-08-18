@@ -115,4 +115,20 @@ struct CatalogueItem {
     std::string instructorName;
 };
 
+struct FacultyOfferingItem {
+    Course course;
+    CourseOffering offering;
+};
+
+struct FacultyRosterEntry {
+    Enrollment enrollment;
+    std::string studentName;
+    std::string studentEmail;
+};
+
+struct FacultyGradeStateEntry {
+    Enrollment enrollment;
+    std::optional<GradeRecord> grade;
+};
+
 }
