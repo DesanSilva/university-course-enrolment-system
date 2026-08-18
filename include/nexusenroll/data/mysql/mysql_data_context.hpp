@@ -51,12 +51,22 @@ public:
         common::OfferingId id) const override;
     common::Result<std::vector<business::domain::Course>> courses() const override;
     common::Result<std::vector<business::domain::CourseOffering>> offerings() const override;
+    common::Result<std::vector<business::domain::CatalogueItem>> browseCatalogue(
+        const business::domain::CatalogueFilter& filter) const override;
     common::Result<void> saveCourse(business::domain::Course course) override;
     common::Result<void> saveOffering(business::domain::CourseOffering offering) override;
 
     common::Result<std::optional<business::domain::Enrollment>> findEnrollment(
         common::EnrollmentId id) const override;
+    common::Result<std::optional<business::domain::Enrollment>> findStudentEnrollment(
+        common::StudentId studentId,
+        common::OfferingId offeringId) const override;
     common::Result<std::vector<business::domain::Enrollment>> enrollments() const override;
+    common::Result<std::vector<business::domain::Enrollment>> activeEnrollmentsForStudent(
+        common::StudentId studentId) const override;
+    common::Result<std::vector<business::domain::Enrollment>> scheduleEnrollmentsForStudent(
+        common::StudentId studentId,
+        const std::string& semester) const override;
     common::Result<void> saveEnrollment(business::domain::Enrollment enrollment) override;
     common::Result<void> removeEnrollment(common::EnrollmentId id) override;
 
@@ -68,6 +78,8 @@ public:
     common::Result<std::optional<business::domain::GradeRecord>> findGradeRecord(
         common::GradeRecordId id) const override;
     common::Result<std::vector<business::domain::GradeRecord>> gradeRecords() const override;
+    common::Result<std::vector<business::domain::GradeRecord>> submittedGradesForStudent(
+        common::StudentId studentId) const override;
     common::Result<void> saveGradeRecord(business::domain::GradeRecord record) override;
 
     common::Result<std::optional<business::domain::CourseChangeRequest>> findChangeRequest(
@@ -78,7 +90,16 @@ public:
 
     common::Result<std::optional<business::domain::WaitlistEntry>> findWaitlistEntry(
         common::WaitlistEntryId id) const override;
+    common::Result<std::optional<business::domain::WaitlistEntry>> findStudentWaitlistEntry(
+        common::StudentId studentId,
+        common::OfferingId offeringId) const override;
     common::Result<std::vector<business::domain::WaitlistEntry>> waitlistEntries() const override;
+    common::Result<std::vector<business::domain::WaitlistEntry>> waitlistEntriesForStudent(
+        common::StudentId studentId) const override;
+    common::Result<std::vector<business::domain::WaitlistEntry>> waitingEntriesForOffering(
+        common::OfferingId offeringId) const override;
+    common::Result<std::size_t> nextWaitlistPosition(
+        common::OfferingId offeringId) const override;
     common::Result<void> saveWaitlistEntry(business::domain::WaitlistEntry entry) override;
     common::Result<void> removeWaitlistEntry(common::WaitlistEntryId id) override;
 

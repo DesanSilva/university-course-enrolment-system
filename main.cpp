@@ -1,8 +1,10 @@
+#include "nexusenroll/business/notifications/seat_notification.hpp"
 #include "nexusenroll/business/sessions/demonstration_session_service.hpp"
 #include "nexusenroll/data/mysql/mysql_data_context.hpp"
 #include "nexusenroll/presentation/api/routes.hpp"
 
 #include <iostream>
+#include <memory>
 
 using namespace nexusenroll::data::mysql;
 using namespace std;
@@ -22,8 +24,16 @@ int main() {
     }
 
     nexusenroll::business::sessions::DemonstrationSessionService sessionService(dataContext);
+    nexusenroll::business::notifications::NotificationPublisher notificationPublisher;
+    auto waitlistObserver =
+        std::make_shared<nexusenroll::business::notifications::WaitlistNotificationObserver>();
+    notificationPublisher.subscribe(waitlistObserver);
     crow::SimpleApp application;
-    nexusenroll::presentation::api::registerRoutes(application, sessionService);
+    nexusenroll::presentation::api::registerRoutes(
+        application,
+        sessionService,
+        {dataContext, dataContext, dataContext, dataContext, dataContext,
+         dataContext, dataContext, notificationPublisher});
 
     application.port(8080).multithreaded().run();
 }

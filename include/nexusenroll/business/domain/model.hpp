@@ -101,4 +101,18 @@ struct WaitlistEntry {
     WaitlistStatus status;
 };
 
+struct CatalogueFilter {
+    std::string semester;
+    std::string department;
+    std::string courseNumber;
+    std::string keyword;
+    std::string instructor;
+};
+
+struct CatalogueItem {
+    Course course;
+    CourseOffering offering;
+    std::string instructorName;
+};
+
 }

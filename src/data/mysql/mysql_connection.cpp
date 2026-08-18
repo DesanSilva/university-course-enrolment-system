@@ -141,12 +141,22 @@ public:
         Rows rows;
         while (MYSQL_ROW mysqlRow = mysql_fetch_row(result)) {
             const unsigned long* lengths = mysql_fetch_lengths(result);
+            if (!lengths) {
+                const string message = mysql_error(connection_);
+                mysql_free_result(result);
+                return Result<Rows>::failure("MYSQL_RESULT_FAILED", message);
+            }
             Row row;
             row.reserve(fieldCount);
             for (unsigned int index = 0; index < fieldCount; ++index) {
                 row.emplace_back(mysqlRow[index] ? string(mysqlRow[index], lengths[index]) : "");
             }
             rows.push_back(move(row));
+        }
+        if (mysql_errno(connection_) != 0) {
+            const string message = mysql_error(connection_);
+            mysql_free_result(result);
+            return Result<Rows>::failure("MYSQL_RESULT_FAILED", message);
         }
         mysql_free_result(result);
         return Result<Rows>::success(move(rows));
@@ -192,22 +202,43 @@ Result<void> MySqlConnection::transaction(const TransactionOperation& operation)
     if (!started) {
         return started;
     }
+    const auto rollback = [this](const string& originalFailure) {
+        auto rolledBack = implementation_->executeUnlocked("ROLLBACK");
+        if (!rolledBack) {
+            return Result<void>::failure(
+                "MYSQL_ROLLBACK_FAILED",
+                originalFailure + " Rollback also failed: " + rolledBack.error().message);
+        }
+        return Result<void>::success();
+    };
     try {
         auto result = operation(*this);
         if (!result) {
-            implementation_->executeUnlocked("ROLLBACK");
+            auto rolledBack = rollback(result.error().message);
+            if (!rolledBack) {
+                return rolledBack;
+            }
             return result;
         }
         auto committed = implementation_->executeUnlocked("COMMIT");
         if (!committed) {
-            implementation_->executeUnlocked("ROLLBACK");
+            auto rolledBack = rollback(committed.error().message);
+            if (!rolledBack) {
+                return rolledBack;
+            }
         }
         return committed;
     } catch (const exception& exception) {
-        implementation_->executeUnlocked("ROLLBACK");
+        auto rolledBack = rollback(exception.what());
+        if (!rolledBack) {
+            return rolledBack;
+        }
         return Result<void>::failure("TRANSACTION_EXCEPTION", exception.what());
     } catch (...) {
-        implementation_->executeUnlocked("ROLLBACK");
+        auto rolledBack = rollback("The transaction failed with an unknown exception.");
+        if (!rolledBack) {
+            return rolledBack;
+        }
         return Result<void>::failure(
             "TRANSACTION_EXCEPTION", "The transaction failed with an unknown exception.");
     }

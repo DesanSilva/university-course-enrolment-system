@@ -230,6 +230,9 @@ Result<string> lookupSingleValue(
         return Result<string>::failure(
             "MISSING_REFERENCE", description + " does not exist.");
     }
+    if (rows.value().size() != 1 || rows.value().front().size() != 1) {
+        return mappingFailure<string>(description + " lookup returned an unexpected shape.");
+    }
     return Result<string>::success(rows.value().front().front());
 }
 
@@ -244,6 +247,9 @@ Result<void> requireRole(
     }
     if (rows.value().empty()) {
         return Result<void>::failure("MISSING_REFERENCE", "The referenced user does not exist.");
+    }
+    if (rows.value().size() != 1 || rows.value().front().size() != 1) {
+        return mappingFailure<void>("A user-role query returned an unexpected shape.");
     }
     if (rows.value().front().front() != userRoleSql(role)) {
         return Result<void>::failure("INVALID_RECORD", "The user role does not match the profile.");
@@ -280,8 +286,30 @@ Result<void> ensureAffected(MySqlConnection& connection, const string& descripti
     if (!rows) {
         return failure<void>(rows.error());
     }
-    if (rows.value().empty() || rows.value().front().empty() || rows.value().front().front() == "0") {
+    if (rows.value().size() != 1 || rows.value().front().size() != 1) {
+        return mappingFailure<void>(description + " affected-row check returned an unexpected shape.");
+    }
+    if (rows.value().front().front() == "0") {
         return Result<void>::failure("RECORD_NOT_FOUND", description + " does not exist.");
+    }
+    return Result<void>::success();
+}
+
+Result<void> ensurePersistedPrimary(
+    MySqlConnection& connection,
+    const string& sql,
+    const string& description) {
+    auto rows = connection.query(sql);
+    if (!rows) {
+        return failure<void>(rows.error());
+    }
+    if (rows.value().empty()) {
+        return Result<void>::failure(
+            "PERSISTENCE_ID_CONFLICT",
+            description + " conflicts with another persisted record.");
+    }
+    if (rows.value().size() != 1 || rows.value().front().size() != 1) {
+        return mappingFailure<void>(description + " identity check returned an unexpected shape.");
     }
     return Result<void>::success();
 }
@@ -383,16 +411,23 @@ public:
             }
             auto lease = pool_.acquire();
             struct ConnectionScope {
-                ConnectionScope(const Implementation* owner, MySqlConnection* connection) {
+                ConnectionScope(const Implementation* owner, MySqlConnection* connection)
+                    : previousOwner(connectionOwner_),
+                      previousConnection(currentConnection_),
+                      previousTransactionActive(transactionActive_) {
                     connectionOwner_ = owner;
                     currentConnection_ = connection;
                     transactionActive_ = false;
                 }
                 ~ConnectionScope() {
-                    transactionActive_ = false;
-                    currentConnection_ = nullptr;
-                    connectionOwner_ = nullptr;
+                    transactionActive_ = previousTransactionActive;
+                    currentConnection_ = previousConnection;
+                    connectionOwner_ = previousOwner;
                 }
+
+                const Implementation* previousOwner;
+                MySqlConnection* previousConnection;
+                bool previousTransactionActive;
             } scope(this, &lease.connection());
             return operation(lease.connection());
         } catch (const exception& exception) {
@@ -417,23 +452,30 @@ public:
             return Result<void>::failure(
                 "INVALID_TRANSACTION", "A transaction requires an operation.");
         }
-        if (transactionActive_) {
+        if (connectionOwner_ == this && transactionActive_) {
             return Result<void>::failure(
                 "NESTED_TRANSACTION", "Nested Data Access transactions are not supported.");
         }
         auto lease = pool_.acquire();
         return lease.connection().transaction([this, &operation](MySqlConnection& connection) {
             struct ConnectionScope {
-                ConnectionScope(const Implementation* owner, MySqlConnection* connection) {
+                ConnectionScope(const Implementation* owner, MySqlConnection* connection)
+                    : previousOwner(connectionOwner_),
+                      previousConnection(currentConnection_),
+                      previousTransactionActive(transactionActive_) {
                     connectionOwner_ = owner;
                     currentConnection_ = connection;
                     transactionActive_ = true;
                 }
                 ~ConnectionScope() {
-                    transactionActive_ = false;
-                    currentConnection_ = nullptr;
-                    connectionOwner_ = nullptr;
+                    transactionActive_ = previousTransactionActive;
+                    currentConnection_ = previousConnection;
+                    connectionOwner_ = previousOwner;
                 }
+
+                const Implementation* previousOwner;
+                MySqlConnection* previousConnection;
+                bool previousTransactionActive;
             } scope(this, &connection);
             return operation();
         });
@@ -632,12 +674,22 @@ Result<void> MySqlDataContext::saveUser(User user) {
         if (!compatibleRole) {
             return compatibleRole;
         }
-        return connection.execute(
+        auto saved = connection.execute(
             "INSERT INTO users (user_id, name, email, role, status) VALUES (" +
             quoted(connection, user.id.value()) + ", " + quoted(connection, user.name) + ", " +
             quoted(connection, user.email) + ", " + quoted(connection, userRoleSql(user.role)) +
             ", " + quoted(connection, userStatusSql(user.status)) + ") ON DUPLICATE KEY UPDATE "
-            "name = VALUES(name), email = VALUES(email), role = VALUES(role), status = VALUES(status)");
+            "name = IF(user_id = VALUES(user_id), VALUES(name), name), "
+            "email = IF(user_id = VALUES(user_id), VALUES(email), email), "
+            "role = IF(user_id = VALUES(user_id), VALUES(role), role), "
+            "status = IF(user_id = VALUES(user_id), VALUES(status), status)");
+        if (!saved) {
+            return saved;
+        }
+        return ensurePersistedPrimary(
+            connection,
+            "SELECT 1 FROM users WHERE user_id = " + quoted(connection, user.id.value()),
+            "The user ID or email");
     });
 }
 
@@ -651,11 +703,20 @@ Result<void> MySqlDataContext::saveStudent(Student student) {
         if (!role) {
             return role;
         }
-        return connection.execute(
+        auto saved = connection.execute(
             "INSERT INTO students (student_id, user_id, program_id) VALUES (" +
             quoted(connection, student.id.value()) + ", " + quoted(connection, student.userId.value()) +
             ", " + quoted(connection, student.programId.value()) + ") ON DUPLICATE KEY UPDATE "
-            "user_id = VALUES(user_id), program_id = VALUES(program_id)");
+            "user_id = IF(student_id = VALUES(student_id), VALUES(user_id), user_id), "
+            "program_id = IF(student_id = VALUES(student_id), VALUES(program_id), program_id)");
+        if (!saved) {
+            return saved;
+        }
+        return ensurePersistedPrimary(
+            connection,
+            "SELECT 1 FROM students WHERE student_id = " +
+                quoted(connection, student.id.value()),
+            "The Student ID or linked User");
     });
 }
 
@@ -674,16 +735,28 @@ Result<void> MySqlDataContext::saveFaculty(Faculty faculty) {
             "SELECT department_id FROM departments WHERE department_id = " +
                 quoted(connection, faculty.department) + " OR code = " +
                 quoted(connection, faculty.department) + " OR name = " +
-                quoted(connection, faculty.department) + " LIMIT 1",
+                quoted(connection, faculty.department) + " ORDER BY CASE WHEN department_id = " +
+                quoted(connection, faculty.department) + " THEN 0 WHEN code = " +
+                quoted(connection, faculty.department) + " THEN 1 ELSE 2 END, department_id LIMIT 1",
             "The faculty department");
         if (!department) {
             return failure<void>(department.error());
         }
-        return connection.execute(
+        auto saved = connection.execute(
             "INSERT INTO faculty (faculty_id, user_id, department_id) VALUES (" +
             quoted(connection, faculty.id.value()) + ", " + quoted(connection, faculty.userId.value()) +
             ", " + quoted(connection, department.value()) + ") ON DUPLICATE KEY UPDATE "
-            "user_id = VALUES(user_id), department_id = VALUES(department_id)");
+            "user_id = IF(faculty_id = VALUES(faculty_id), VALUES(user_id), user_id), "
+            "department_id = IF(faculty_id = VALUES(faculty_id), "
+            "VALUES(department_id), department_id)");
+        if (!saved) {
+            return saved;
+        }
+        return ensurePersistedPrimary(
+            connection,
+            "SELECT 1 FROM faculty WHERE faculty_id = " +
+                quoted(connection, faculty.id.value()),
+            "The Faculty ID or linked User");
     });
 }
 
@@ -825,6 +898,86 @@ Result<vector<CourseOffering>> MySqlDataContext::offerings() const {
         });
 }
 
+Result<vector<CatalogueItem>> MySqlDataContext::browseCatalogue(
+    const CatalogueFilter& filter) const {
+    return implementation_->withConnection<vector<CatalogueItem>>(
+        [this, &filter](MySqlConnection& connection) {
+            vector<string> predicates;
+            if (!filter.semester.empty()) {
+                predicates.push_back(
+                    "(s.code = " + quoted(connection, filter.semester) +
+                    " OR s.semester_id = " + quoted(connection, filter.semester) + ")");
+            }
+            if (!filter.department.empty()) {
+                predicates.push_back(
+                    "(d.code = " + quoted(connection, filter.department) +
+                    " OR d.name = " + quoted(connection, filter.department) + ")");
+            }
+            if (!filter.courseNumber.empty()) {
+                predicates.push_back(
+                    "c.course_number = " + quoted(connection, filter.courseNumber));
+            }
+            if (!filter.keyword.empty()) {
+                const string keyword = quoted(connection, "%" + filter.keyword + "%");
+                predicates.push_back(
+                    "(c.code LIKE " + keyword + " OR c.name LIKE " + keyword +
+                    " OR c.description LIKE " + keyword + ")");
+            }
+            if (!filter.instructor.empty()) {
+                predicates.push_back(
+                    "u.name LIKE " + quoted(connection, "%" + filter.instructor + "%"));
+            }
+
+            string sql =
+                "SELECT o.offering_id, u.name FROM course_offerings o "
+                "JOIN courses c ON c.course_id = o.course_id "
+                "JOIN departments d ON d.department_id = c.department_id "
+                "JOIN semesters s ON s.semester_id = o.semester_id "
+                "JOIN faculty f ON f.faculty_id = o.instructor_id "
+                "JOIN users u ON u.user_id = f.user_id";
+            if (!predicates.empty()) {
+                sql += " WHERE ";
+                for (size_t index = 0; index < predicates.size(); ++index) {
+                    if (index != 0) {
+                        sql += " AND ";
+                    }
+                    sql += predicates[index];
+                }
+            }
+            sql += " ORDER BY s.code, c.code, o.offering_id";
+
+            auto rows = connection.query(sql);
+            if (!rows) {
+                return failure<vector<CatalogueItem>>(rows.error());
+            }
+            vector<CatalogueItem> items;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 2) {
+                    return mappingFailure<vector<CatalogueItem>>(
+                        "A catalogue query returned an unexpected shape.");
+                }
+                auto offering = findOffering(OfferingId{row[0]});
+                if (!offering) {
+                    return failure<vector<CatalogueItem>>(offering.error());
+                }
+                if (!offering.value()) {
+                    return mappingFailure<vector<CatalogueItem>>(
+                        "A catalogue offering disappeared during its read.");
+                }
+                auto course = findCourse(offering.value()->courseId);
+                if (!course) {
+                    return failure<vector<CatalogueItem>>(course.error());
+                }
+                if (!course.value()) {
+                    return mappingFailure<vector<CatalogueItem>>(
+                        "A catalogue course disappeared during its read.");
+                }
+                items.push_back({*course.value(), *offering.value(), row[1]});
+            }
+            return Result<vector<CatalogueItem>>::success(move(items));
+        });
+}
+
 Result<void> MySqlDataContext::saveCourse(Course course) {
     return implementation_->atomically([&course](MySqlConnection& connection) {
         if (course.id.empty() || course.code.empty() || course.department.empty() ||
@@ -837,7 +990,9 @@ Result<void> MySqlDataContext::saveCourse(Course course) {
             "SELECT department_id FROM departments WHERE department_id = " +
                 quoted(connection, course.department) + " OR code = " +
                 quoted(connection, course.department) + " OR name = " +
-                quoted(connection, course.department) + " LIMIT 1",
+                quoted(connection, course.department) + " ORDER BY CASE WHEN department_id = " +
+                quoted(connection, course.department) + " THEN 0 WHEN code = " +
+                quoted(connection, course.department) + " THEN 1 ELSE 2 END, department_id LIMIT 1",
             "The course department");
         if (!department) {
             return failure<void>(department.error());
@@ -848,11 +1003,26 @@ Result<void> MySqlDataContext::saveCourse(Course course) {
             quoted(connection, department.value()) + ", " + quoted(connection, course.courseNumber) +
             ", " + quoted(connection, course.code) + ", " + quoted(connection, course.name) + ", " +
             quoted(connection, course.description) + ", " + to_string(course.credits) +
-            ") ON DUPLICATE KEY UPDATE department_id = VALUES(department_id), "
-            "course_number = VALUES(course_number), code = VALUES(code), name = VALUES(name), "
-            "description = VALUES(description), credits = VALUES(credits)");
+            ") ON DUPLICATE KEY UPDATE "
+            "department_id = IF(course_id = VALUES(course_id), "
+            "VALUES(department_id), department_id), "
+            "course_number = IF(course_id = VALUES(course_id), "
+            "VALUES(course_number), course_number), "
+            "code = IF(course_id = VALUES(course_id), VALUES(code), code), "
+            "name = IF(course_id = VALUES(course_id), VALUES(name), name), "
+            "description = IF(course_id = VALUES(course_id), "
+            "VALUES(description), description), "
+            "credits = IF(course_id = VALUES(course_id), VALUES(credits), credits)");
         if (!saved) {
             return saved;
+        }
+        auto identity = ensurePersistedPrimary(
+            connection,
+            "SELECT 1 FROM courses WHERE course_id = " +
+                quoted(connection, course.id.value()),
+            "The course ID, code, or department/number");
+        if (!identity) {
+            return identity;
         }
         auto cleared = connection.execute(
             "DELETE FROM course_prerequisites WHERE course_id = " +
@@ -884,7 +1054,9 @@ Result<void> MySqlDataContext::saveOffering(CourseOffering offering) {
             connection,
             "SELECT semester_id FROM semesters WHERE semester_id = " +
                 quoted(connection, offering.semester) + " OR code = " +
-                quoted(connection, offering.semester) + " LIMIT 1",
+                quoted(connection, offering.semester) + " ORDER BY CASE WHEN semester_id = " +
+                quoted(connection, offering.semester) +
+                " THEN 0 ELSE 1 END, semester_id LIMIT 1",
             "The offering semester");
         if (!semester) {
             return failure<void>(semester.error());
@@ -911,7 +1083,9 @@ Result<void> MySqlDataContext::saveOffering(CourseOffering offering) {
                 connection,
                 "SELECT location_id FROM locations WHERE location_id = " +
                     quoted(connection, slot.location()) + " OR CONCAT(building, '-', room) = " +
-                    quoted(connection, slot.location()) + " LIMIT 1",
+                    quoted(connection, slot.location()) + " ORDER BY CASE WHEN location_id = " +
+                    quoted(connection, slot.location()) +
+                    " THEN 0 ELSE 1 END, location_id LIMIT 1",
                 "The schedule location");
             if (!location) {
                 return failure<void>(location.error());
@@ -1010,7 +1184,9 @@ Result<void> MySqlDataContext::saveProgram(DegreeProgram program) {
             "SELECT department_id FROM departments WHERE department_id = " +
                 quoted(connection, program.department) + " OR code = " +
                 quoted(connection, program.department) + " OR name = " +
-                quoted(connection, program.department) + " LIMIT 1",
+                quoted(connection, program.department) + " ORDER BY CASE WHEN department_id = " +
+                quoted(connection, program.department) + " THEN 0 WHEN code = " +
+                quoted(connection, program.department) + " THEN 1 ELSE 2 END, department_id LIMIT 1",
             "The programme department");
         if (!department) {
             return failure<void>(department.error());
@@ -1020,10 +1196,21 @@ Result<void> MySqlDataContext::saveProgram(DegreeProgram program) {
             quoted(connection, program.id.value()) + ", " + quoted(connection, department.value()) +
             ", " + quoted(connection, program.name) + ", " +
             to_string(program.requiredCredits) + ") ON DUPLICATE KEY UPDATE "
-            "department_id = VALUES(department_id), name = VALUES(name), "
-            "required_credits = VALUES(required_credits)");
+            "department_id = IF(program_id = VALUES(program_id), "
+            "VALUES(department_id), department_id), "
+            "name = IF(program_id = VALUES(program_id), VALUES(name), name), "
+            "required_credits = IF(program_id = VALUES(program_id), "
+            "VALUES(required_credits), required_credits)");
         if (!saved) {
             return saved;
+        }
+        auto identity = ensurePersistedPrimary(
+            connection,
+            "SELECT 1 FROM degree_programs WHERE program_id = " +
+                quoted(connection, program.id.value()),
+            "The programme ID or name");
+        if (!identity) {
+            return identity;
         }
         auto cleared = connection.execute(
             "DELETE FROM program_required_courses WHERE program_id = " +
@@ -1068,6 +1255,32 @@ Result<optional<Enrollment>> MySqlDataContext::findEnrollment(
         });
 }
 
+Result<optional<Enrollment>> MySqlDataContext::findStudentEnrollment(
+    StudentId studentId,
+    OfferingId offeringId) const {
+    return implementation_->withConnection<optional<Enrollment>>(
+        [&studentId, &offeringId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT enrollment_id, student_id, offering_id, status FROM enrollments "
+                "WHERE student_id = " + quoted(connection, studentId.value()) +
+                " AND offering_id = " + quoted(connection, offeringId.value()) + " LIMIT 1");
+            if (!rows) {
+                return failure<optional<Enrollment>>(rows.error());
+            }
+            if (rows.value().empty()) {
+                return Result<optional<Enrollment>>::success(nullopt);
+            }
+            const auto& row = rows.value().front();
+            if (row.size() != 4) {
+                return mappingFailure<optional<Enrollment>>(
+                    "A Student-offering enrolment query returned an unexpected shape.");
+            }
+            return Result<optional<Enrollment>>::success(Enrollment{
+                EnrollmentId{row[0]}, StudentId{row[1]}, OfferingId{row[2]},
+                parseEnrollmentStatus(row[3])});
+        });
+}
+
 Result<vector<Enrollment>> MySqlDataContext::enrollments() const {
     return implementation_->withConnection<vector<Enrollment>>(
         [](MySqlConnection& connection) {
@@ -1090,20 +1303,93 @@ Result<vector<Enrollment>> MySqlDataContext::enrollments() const {
         });
 }
 
+Result<vector<Enrollment>> MySqlDataContext::activeEnrollmentsForStudent(
+    StudentId studentId) const {
+    return implementation_->withConnection<vector<Enrollment>>(
+        [&studentId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT enrollment_id, student_id, offering_id, status FROM enrollments "
+                "WHERE student_id = " + quoted(connection, studentId.value()) +
+                " AND status = 'ACTIVE' ORDER BY offering_id, enrollment_id");
+            if (!rows) {
+                return failure<vector<Enrollment>>(rows.error());
+            }
+            vector<Enrollment> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 4) {
+                    return mappingFailure<vector<Enrollment>>(
+                        "An active Student enrolment query returned an unexpected shape.");
+                }
+                values.push_back({EnrollmentId{row[0]}, StudentId{row[1]},
+                                  OfferingId{row[2]}, parseEnrollmentStatus(row[3])});
+            }
+            return Result<vector<Enrollment>>::success(move(values));
+        });
+}
+
+Result<vector<Enrollment>> MySqlDataContext::scheduleEnrollmentsForStudent(
+    StudentId studentId,
+    const string& semester) const {
+    return implementation_->withConnection<vector<Enrollment>>(
+        [&studentId, &semester](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT e.enrollment_id, e.student_id, e.offering_id, e.status "
+                "FROM enrollments e JOIN course_offerings o ON o.offering_id = e.offering_id "
+                "JOIN semesters s ON s.semester_id = o.semester_id WHERE e.student_id = " +
+                quoted(connection, studentId.value()) +
+                " AND (s.code = " + quoted(connection, semester) +
+                " OR s.semester_id = " + quoted(connection, semester) +
+                ") AND e.status <> 'DROPPED' ORDER BY o.offering_id, e.enrollment_id");
+            if (!rows) {
+                return failure<vector<Enrollment>>(rows.error());
+            }
+            vector<Enrollment> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 4) {
+                    return mappingFailure<vector<Enrollment>>(
+                        "A Student schedule query returned an unexpected shape.");
+                }
+                values.push_back({EnrollmentId{row[0]}, StudentId{row[1]},
+                                  OfferingId{row[2]}, parseEnrollmentStatus(row[3])});
+            }
+            return Result<vector<Enrollment>>::success(move(values));
+        });
+}
+
 Result<void> MySqlDataContext::saveEnrollment(Enrollment enrollment) {
     return implementation_->atomically([&enrollment](MySqlConnection& connection) {
         if (enrollment.id.empty() || enrollment.studentId.empty() || enrollment.offeringId.empty()) {
             return Result<void>::failure(
                 "INVALID_RECORD", "An enrolment requires enrolment, student, and offering IDs.");
         }
-        return connection.execute(
+        auto saved = connection.execute(
             "INSERT INTO enrollments (enrollment_id, student_id, offering_id, status) VALUES (" +
             quoted(connection, enrollment.id.value()) + ", " +
             quoted(connection, enrollment.studentId.value()) + ", " +
             quoted(connection, enrollment.offeringId.value()) + ", " +
             quoted(connection, enrollmentStatusSql(enrollment.status)) +
-            ") ON DUPLICATE KEY UPDATE student_id = VALUES(student_id), "
-            "offering_id = VALUES(offering_id), status = VALUES(status)");
+            ") ON DUPLICATE KEY UPDATE status = IF("
+            "enrollment_id = VALUES(enrollment_id) AND "
+            "student_id = VALUES(student_id) AND offering_id = VALUES(offering_id), "
+            "VALUES(status), status)");
+        if (!saved) {
+            return saved;
+        }
+        auto rows = connection.query(
+            "SELECT student_id, offering_id, status FROM enrollments WHERE enrollment_id = " +
+            quoted(connection, enrollment.id.value()));
+        if (!rows) {
+            return failure<void>(rows.error());
+        }
+        if (rows.value().size() != 1 || rows.value().front().size() != 3 ||
+            rows.value().front()[0] != enrollment.studentId.value() ||
+            rows.value().front()[1] != enrollment.offeringId.value() ||
+            parseEnrollmentStatus(rows.value().front()[2]) != enrollment.status) {
+            return Result<void>::failure(
+                "PERSISTENCE_ID_CONFLICT",
+                "The enrolment ID conflicts with another persisted relationship.");
+        }
+        return Result<void>::success();
     });
 }
 
@@ -1172,6 +1458,35 @@ Result<vector<GradeRecord>> MySqlDataContext::gradeRecords() const {
         });
 }
 
+Result<vector<GradeRecord>> MySqlDataContext::submittedGradesForStudent(
+    StudentId studentId) const {
+    return implementation_->withConnection<vector<GradeRecord>>(
+        [&studentId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT g.grade_record_id, e.student_id, e.offering_id, o.course_id, "
+                "g.grade, g.lifecycle FROM grade_records g "
+                "JOIN enrollments e ON e.enrollment_id = g.enrollment_id "
+                "JOIN course_offerings o ON o.offering_id = e.offering_id "
+                "WHERE e.student_id = " + quoted(connection, studentId.value()) +
+                " AND e.status = 'COMPLETED' AND g.lifecycle = 'SUBMITTED' "
+                "ORDER BY o.course_id, e.offering_id, g.grade_record_id");
+            if (!rows) {
+                return failure<vector<GradeRecord>>(rows.error());
+            }
+            vector<GradeRecord> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 6) {
+                    return mappingFailure<vector<GradeRecord>>(
+                        "A submitted Student grade query returned an unexpected shape.");
+                }
+                values.push_back({GradeRecordId{row[0]}, StudentId{row[1]},
+                                  OfferingId{row[2]}, CourseId{row[3]}, row[4],
+                                  parseGradeLifecycle(row[5])});
+            }
+            return Result<vector<GradeRecord>>::success(move(values));
+        });
+}
+
 Result<void> MySqlDataContext::saveGradeRecord(GradeRecord record) {
     return implementation_->atomically([&record](MySqlConnection& connection) {
         if (record.id.empty() || record.studentId.empty() || record.offeringId.empty() ||
@@ -1190,13 +1505,34 @@ Result<void> MySqlDataContext::saveGradeRecord(GradeRecord record) {
         if (!enrollment) {
             return failure<void>(enrollment.error());
         }
-        return connection.execute(
+        auto saved = connection.execute(
             "INSERT INTO grade_records (grade_record_id, enrollment_id, grade, lifecycle) VALUES (" +
             quoted(connection, record.id.value()) + ", " + quoted(connection, enrollment.value()) +
             ", " + quoted(connection, record.grade) + ", " +
             quoted(connection, gradeLifecycleSql(record.lifecycle)) +
-            ") ON DUPLICATE KEY UPDATE enrollment_id = VALUES(enrollment_id), "
-            "grade = VALUES(grade), lifecycle = VALUES(lifecycle)");
+            ") ON DUPLICATE KEY UPDATE grade = IF("
+            "grade_record_id = VALUES(grade_record_id) AND "
+            "enrollment_id = VALUES(enrollment_id), VALUES(grade), grade), "
+            "lifecycle = IF(grade_record_id = VALUES(grade_record_id) AND "
+            "enrollment_id = VALUES(enrollment_id), VALUES(lifecycle), lifecycle)");
+        if (!saved) {
+            return saved;
+        }
+        auto rows = connection.query(
+            "SELECT enrollment_id, grade, lifecycle FROM grade_records "
+            "WHERE grade_record_id = " + quoted(connection, record.id.value()));
+        if (!rows) {
+            return failure<void>(rows.error());
+        }
+        if (rows.value().size() != 1 || rows.value().front().size() != 3 ||
+            rows.value().front()[0] != enrollment.value() ||
+            rows.value().front()[1] != record.grade ||
+            parseGradeLifecycle(rows.value().front()[2]) != record.lifecycle) {
+            return Result<void>::failure(
+                "PERSISTENCE_ID_CONFLICT",
+                "The grade ID or enrolment conflicts with another persisted grade.");
+        }
+        return Result<void>::success();
     });
 }
 
@@ -1267,7 +1603,7 @@ Result<void> MySqlDataContext::saveChangeRequest(CourseChangeRequest request) {
         const string offeringSql = request.offeringId
                                             ? quoted(connection, request.offeringId->value())
                                             : "NULL";
-        return connection.execute(
+        auto saved = connection.execute(
             "INSERT INTO course_change_requests "
             "(change_request_id, faculty_id, course_id, offering_id, change_type, "
             "requested_value, status) VALUES (" +
@@ -1277,10 +1613,36 @@ Result<void> MySqlDataContext::saveChangeRequest(CourseChangeRequest request) {
             quoted(connection, changeTypeSql(request.type)) + ", " +
             quoted(connection, request.requestedValue) + ", " +
             quoted(connection, changeStatusSql(request.status)) +
-            ") ON DUPLICATE KEY UPDATE faculty_id = VALUES(faculty_id), "
-            "course_id = VALUES(course_id), offering_id = VALUES(offering_id), "
-            "change_type = VALUES(change_type), requested_value = VALUES(requested_value), "
-            "status = VALUES(status)");
+            ") ON DUPLICATE KEY UPDATE requested_value = IF("
+            "faculty_id = VALUES(faculty_id) AND course_id = VALUES(course_id) AND "
+            "offering_id <=> VALUES(offering_id) AND change_type = VALUES(change_type), "
+            "VALUES(requested_value), requested_value), status = IF("
+            "faculty_id = VALUES(faculty_id) AND course_id = VALUES(course_id) AND "
+            "offering_id <=> VALUES(offering_id) AND change_type = VALUES(change_type), "
+            "VALUES(status), status)");
+        if (!saved) {
+            return saved;
+        }
+        auto rows = connection.query(
+            "SELECT faculty_id, course_id, COALESCE(offering_id, ''), change_type, "
+            "requested_value, status FROM course_change_requests WHERE change_request_id = " +
+            quoted(connection, request.id.value()));
+        if (!rows) {
+            return failure<void>(rows.error());
+        }
+        const string expectedOffering = request.offeringId ? request.offeringId->value() : "";
+        if (rows.value().size() != 1 || rows.value().front().size() != 6 ||
+            rows.value().front()[0] != request.facultyId.value() ||
+            rows.value().front()[1] != request.courseId.value() ||
+            rows.value().front()[2] != expectedOffering ||
+            parseChangeType(rows.value().front()[3]) != request.type ||
+            rows.value().front()[4] != request.requestedValue ||
+            parseChangeStatus(rows.value().front()[5]) != request.status) {
+            return Result<void>::failure(
+                "PERSISTENCE_ID_CONFLICT",
+                "The change-request ID conflicts with another persisted request.");
+        }
+        return Result<void>::success();
     });
 }
 
@@ -1309,6 +1671,33 @@ Result<optional<WaitlistEntry>> MySqlDataContext::findWaitlistEntry(
         });
 }
 
+Result<optional<WaitlistEntry>> MySqlDataContext::findStudentWaitlistEntry(
+    StudentId studentId,
+    OfferingId offeringId) const {
+    return implementation_->withConnection<optional<WaitlistEntry>>(
+        [&studentId, &offeringId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT waitlist_entry_id, student_id, offering_id, position, status "
+                "FROM waitlist_entries WHERE student_id = " +
+                quoted(connection, studentId.value()) + " AND offering_id = " +
+                quoted(connection, offeringId.value()) + " LIMIT 1");
+            if (!rows) {
+                return failure<optional<WaitlistEntry>>(rows.error());
+            }
+            if (rows.value().empty()) {
+                return Result<optional<WaitlistEntry>>::success(nullopt);
+            }
+            const auto& row = rows.value().front();
+            if (row.size() != 5) {
+                return mappingFailure<optional<WaitlistEntry>>(
+                    "A Student-offering waitlist query returned an unexpected shape.");
+            }
+            return Result<optional<WaitlistEntry>>::success(WaitlistEntry{
+                WaitlistEntryId{row[0]}, StudentId{row[1]}, OfferingId{row[2]},
+                parseSize(row[3]), parseWaitlistStatus(row[4])});
+        });
+}
+
 Result<vector<WaitlistEntry>> MySqlDataContext::waitlistEntries() const {
     return implementation_->withConnection<vector<WaitlistEntry>>(
         [](MySqlConnection& connection) {
@@ -1332,6 +1721,79 @@ Result<vector<WaitlistEntry>> MySqlDataContext::waitlistEntries() const {
         });
 }
 
+Result<vector<WaitlistEntry>> MySqlDataContext::waitlistEntriesForStudent(
+    StudentId studentId) const {
+    return implementation_->withConnection<vector<WaitlistEntry>>(
+        [&studentId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT waitlist_entry_id, student_id, offering_id, position, status "
+                "FROM waitlist_entries WHERE student_id = " +
+                quoted(connection, studentId.value()) +
+                " AND status <> 'REMOVED' ORDER BY offering_id, position, waitlist_entry_id");
+            if (!rows) {
+                return failure<vector<WaitlistEntry>>(rows.error());
+            }
+            vector<WaitlistEntry> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 5) {
+                    return mappingFailure<vector<WaitlistEntry>>(
+                        "A Student waitlist query returned an unexpected shape.");
+                }
+                values.push_back({WaitlistEntryId{row[0]}, StudentId{row[1]},
+                                  OfferingId{row[2]}, parseSize(row[3]),
+                                  parseWaitlistStatus(row[4])});
+            }
+            return Result<vector<WaitlistEntry>>::success(move(values));
+        });
+}
+
+Result<vector<WaitlistEntry>> MySqlDataContext::waitingEntriesForOffering(
+    OfferingId offeringId) const {
+    return implementation_->withConnection<vector<WaitlistEntry>>(
+        [&offeringId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT waitlist_entry_id, student_id, offering_id, position, status "
+                "FROM waitlist_entries WHERE offering_id = " +
+                quoted(connection, offeringId.value()) +
+                " AND status = 'WAITING' ORDER BY position, waitlist_entry_id");
+            if (!rows) {
+                return failure<vector<WaitlistEntry>>(rows.error());
+            }
+            vector<WaitlistEntry> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 5) {
+                    return mappingFailure<vector<WaitlistEntry>>(
+                        "An offering waitlist query returned an unexpected shape.");
+                }
+                values.push_back({WaitlistEntryId{row[0]}, StudentId{row[1]},
+                                  OfferingId{row[2]}, parseSize(row[3]),
+                                  parseWaitlistStatus(row[4])});
+            }
+            return Result<vector<WaitlistEntry>>::success(move(values));
+        });
+}
+
+Result<size_t> MySqlDataContext::nextWaitlistPosition(OfferingId offeringId) const {
+    return implementation_->withConnection<size_t>(
+        [&offeringId](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT COALESCE(MAX(position), 0) + 1 FROM waitlist_entries "
+                "WHERE offering_id = " + quoted(connection, offeringId.value()));
+            if (!rows) {
+                return failure<size_t>(rows.error());
+            }
+            if (rows.value().size() != 1 || rows.value().front().size() != 1) {
+                return mappingFailure<size_t>(
+                    "A next waitlist-position query returned an unexpected shape.");
+            }
+            const size_t position = parseSize(rows.value().front().front());
+            if (position == 0) {
+                return mappingFailure<size_t>("A waitlist position must be positive.");
+            }
+            return Result<size_t>::success(position);
+        });
+}
+
 Result<void> MySqlDataContext::saveWaitlistEntry(WaitlistEntry entry) {
     return implementation_->atomically([&entry](MySqlConnection& connection) {
         if (entry.id.empty() || entry.studentId.empty() || entry.offeringId.empty() ||
@@ -1339,7 +1801,7 @@ Result<void> MySqlDataContext::saveWaitlistEntry(WaitlistEntry entry) {
             return Result<void>::failure(
                 "INVALID_RECORD", "A waitlist entry requires IDs and a positive position.");
         }
-        return connection.execute(
+        auto saved = connection.execute(
             "INSERT INTO waitlist_entries "
             "(waitlist_entry_id, student_id, offering_id, position, status) VALUES (" +
             quoted(connection, entry.id.value()) + ", " +
@@ -1347,9 +1809,32 @@ Result<void> MySqlDataContext::saveWaitlistEntry(WaitlistEntry entry) {
             quoted(connection, entry.offeringId.value()) + ", " +
             to_string(entry.position) + ", " +
             quoted(connection, waitlistStatusSql(entry.status)) +
-            ") ON DUPLICATE KEY UPDATE student_id = VALUES(student_id), "
-            "offering_id = VALUES(offering_id), position = VALUES(position), "
-            "status = VALUES(status)");
+            ") ON DUPLICATE KEY UPDATE position = IF("
+            "waitlist_entry_id = VALUES(waitlist_entry_id) AND "
+            "student_id = VALUES(student_id) AND offering_id = VALUES(offering_id), "
+            "VALUES(position), position), status = IF("
+            "waitlist_entry_id = VALUES(waitlist_entry_id) AND "
+            "student_id = VALUES(student_id) AND offering_id = VALUES(offering_id), "
+            "VALUES(status), status)");
+        if (!saved) {
+            return saved;
+        }
+        auto rows = connection.query(
+            "SELECT student_id, offering_id, position, status FROM waitlist_entries "
+            "WHERE waitlist_entry_id = " + quoted(connection, entry.id.value()));
+        if (!rows) {
+            return failure<void>(rows.error());
+        }
+        if (rows.value().size() != 1 || rows.value().front().size() != 4 ||
+            rows.value().front()[0] != entry.studentId.value() ||
+            rows.value().front()[1] != entry.offeringId.value() ||
+            parseSize(rows.value().front()[2]) != entry.position ||
+            parseWaitlistStatus(rows.value().front()[3]) != entry.status) {
+            return Result<void>::failure(
+                "PERSISTENCE_ID_CONFLICT",
+                "The waitlist ID or position conflicts with another persisted entry.");
+        }
+        return Result<void>::success();
     });
 }
 

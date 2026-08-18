@@ -48,6 +48,11 @@ void testInvalidScheduleRanges() {
             "A negative start should be invalid");
     require(!ScheduleSlot::create(DayOfWeek::Monday, 1380, 1441, "ROOM"),
             "An end after midnight should be invalid");
+    require(!ScheduleSlot::create(
+                static_cast<DayOfWeek>(7), 600, 660, "ROOM"),
+            "An out-of-range day should be invalid");
+    require(!ScheduleSlot::create(DayOfWeek::Monday, 600, 660, ""),
+            "An empty location should be invalid");
 }
 
 }
