@@ -1,6 +1,7 @@
 #include "nexusenroll/business/notifications/seat_notification.hpp"
 #include "nexusenroll/business/sessions/demonstration_session_service.hpp"
 #include "nexusenroll/data/mysql/mysql_data_context.hpp"
+#include "nexusenroll/presentation/api/faculty_routes.hpp"
 #include "nexusenroll/presentation/api/routes.hpp"
 
 #include <iostream>
@@ -34,6 +35,9 @@ int main() {
         sessionService,
         {dataContext, dataContext, dataContext, dataContext, dataContext,
          dataContext, dataContext, notificationPublisher});
+    nexusenroll::presentation::api::registerFacultyRoutes(
+        application,
+        {dataContext, dataContext, dataContext, dataContext, dataContext, dataContext});
 
     application.port(8080).multithreaded().run();
 }
