@@ -15,6 +15,8 @@ public:
     virtual common::Result<std::optional<business::domain::GradeRecord>> findGradeRecord(
         common::GradeRecordId id) const = 0;
     virtual common::Result<std::vector<business::domain::GradeRecord>> gradeRecords() const = 0;
+    virtual common::Result<std::vector<business::domain::GradeRecord>> submittedGradesForStudent(
+        common::StudentId studentId) const = 0;
     virtual common::Result<void> saveGradeRecord(business::domain::GradeRecord record) = 0;
 };
 

@@ -17,6 +17,8 @@ public:
         common::OfferingId id) const = 0;
     virtual common::Result<std::vector<business::domain::Course>> courses() const = 0;
     virtual common::Result<std::vector<business::domain::CourseOffering>> offerings() const = 0;
+    virtual common::Result<std::vector<business::domain::CatalogueItem>> browseCatalogue(
+        const business::domain::CatalogueFilter& filter) const = 0;
     virtual common::Result<void> saveCourse(business::domain::Course course) = 0;
     virtual common::Result<void> saveOffering(business::domain::CourseOffering offering) = 0;
 };

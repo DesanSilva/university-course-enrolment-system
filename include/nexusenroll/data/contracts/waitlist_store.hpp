@@ -14,7 +14,16 @@ public:
 
     virtual common::Result<std::optional<business::domain::WaitlistEntry>> findWaitlistEntry(
         common::WaitlistEntryId id) const = 0;
+    virtual common::Result<std::optional<business::domain::WaitlistEntry>> findStudentWaitlistEntry(
+        common::StudentId studentId,
+        common::OfferingId offeringId) const = 0;
     virtual common::Result<std::vector<business::domain::WaitlistEntry>> waitlistEntries() const = 0;
+    virtual common::Result<std::vector<business::domain::WaitlistEntry>> waitlistEntriesForStudent(
+        common::StudentId studentId) const = 0;
+    virtual common::Result<std::vector<business::domain::WaitlistEntry>> waitingEntriesForOffering(
+        common::OfferingId offeringId) const = 0;
+    virtual common::Result<std::size_t> nextWaitlistPosition(
+        common::OfferingId offeringId) const = 0;
     virtual common::Result<void> saveWaitlistEntry(business::domain::WaitlistEntry entry) = 0;
     virtual common::Result<void> removeWaitlistEntry(common::WaitlistEntryId id) = 0;
 };

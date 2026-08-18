@@ -14,7 +14,15 @@ public:
 
     virtual common::Result<std::optional<business::domain::Enrollment>> findEnrollment(
         common::EnrollmentId id) const = 0;
+    virtual common::Result<std::optional<business::domain::Enrollment>> findStudentEnrollment(
+        common::StudentId studentId,
+        common::OfferingId offeringId) const = 0;
     virtual common::Result<std::vector<business::domain::Enrollment>> enrollments() const = 0;
+    virtual common::Result<std::vector<business::domain::Enrollment>> activeEnrollmentsForStudent(
+        common::StudentId studentId) const = 0;
+    virtual common::Result<std::vector<business::domain::Enrollment>> scheduleEnrollmentsForStudent(
+        common::StudentId studentId,
+        const std::string& semester) const = 0;
     virtual common::Result<void> saveEnrollment(business::domain::Enrollment enrollment) = 0;
     virtual common::Result<void> removeEnrollment(common::EnrollmentId id) = 0;
 };
