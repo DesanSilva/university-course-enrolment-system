@@ -24,8 +24,15 @@ public:
     virtual common::Result<bool> facultyTeachesCourse(
         common::FacultyId facultyId,
         common::CourseId courseId) const = 0;
+    virtual common::Result<bool> departmentExists(const std::string& department) const = 0;
+    virtual common::Result<bool> courseHasReferences(common::CourseId courseId) const = 0;
+    virtual common::Result<void> createCourse(business::domain::Course course) = 0;
     virtual common::Result<void> saveCourse(business::domain::Course course) = 0;
+    virtual common::Result<void> deleteCourse(common::CourseId courseId) = 0;
     virtual common::Result<void> saveOffering(business::domain::CourseOffering offering) = 0;
+    virtual common::Result<void> updateOfferingCapacity(
+        common::OfferingId offeringId,
+        std::size_t capacity) = 0;
 };
 
 }

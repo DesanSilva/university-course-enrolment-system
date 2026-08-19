@@ -42,6 +42,12 @@ public:
     common::Result<std::vector<business::domain::User>> users() const override;
     common::Result<std::vector<business::domain::Student>> students() const override;
     common::Result<std::vector<business::domain::Faculty>> facultyMembers() const override;
+    common::Result<std::vector<business::domain::User>> usersByRole(
+        std::optional<business::domain::UserRole> role) const override;
+    common::Result<bool> departmentExists(const std::string& department) const override;
+    common::Result<void> createUser(business::domain::User user) override;
+    common::Result<void> createStudent(business::domain::Student student) override;
+    common::Result<void> createFaculty(business::domain::Faculty faculty) override;
     common::Result<void> saveUser(business::domain::User user) override;
     common::Result<void> saveStudent(business::domain::Student student) override;
     common::Result<void> saveFaculty(business::domain::Faculty faculty) override;
@@ -58,8 +64,14 @@ public:
     common::Result<bool> facultyTeachesCourse(
         common::FacultyId facultyId,
         common::CourseId courseId) const override;
+    common::Result<bool> courseHasReferences(common::CourseId courseId) const override;
+    common::Result<void> createCourse(business::domain::Course course) override;
     common::Result<void> saveCourse(business::domain::Course course) override;
+    common::Result<void> deleteCourse(common::CourseId courseId) override;
     common::Result<void> saveOffering(business::domain::CourseOffering offering) override;
+    common::Result<void> updateOfferingCapacity(
+        common::OfferingId offeringId,
+        std::size_t capacity) override;
 
     common::Result<std::optional<business::domain::Enrollment>> findEnrollment(
         common::EnrollmentId id) const override;
@@ -74,12 +86,17 @@ public:
         const std::string& semester) const override;
     common::Result<std::vector<business::domain::FacultyRosterEntry>> activeRosterForOffering(
         common::OfferingId offeringId) const override;
+    common::Result<std::optional<business::domain::EnrollmentOverride>> findEnrollmentOverride(
+        common::EnrollmentOverrideId id) const override;
+    common::Result<void> createEnrollmentOverride(
+        business::domain::EnrollmentOverride enrollmentOverride) override;
     common::Result<void> saveEnrollment(business::domain::Enrollment enrollment) override;
     common::Result<void> removeEnrollment(common::EnrollmentId id) override;
 
     common::Result<std::optional<business::domain::DegreeProgram>> findProgram(
         common::ProgramId id) const override;
     common::Result<std::vector<business::domain::DegreeProgram>> programs() const override;
+    common::Result<void> createProgram(business::domain::DegreeProgram program) override;
     common::Result<void> saveProgram(business::domain::DegreeProgram program) override;
 
     common::Result<std::optional<business::domain::GradeRecord>> findGradeRecord(
@@ -103,6 +120,8 @@ public:
     common::Result<std::vector<business::domain::CourseChangeRequest>> changeRequests() const override;
     common::Result<std::vector<business::domain::CourseChangeRequest>> changeRequestsForFaculty(
         common::FacultyId facultyId) const override;
+    common::Result<std::vector<business::domain::CourseChangeRequest>> changeRequestsByStatus(
+        std::optional<business::domain::CourseChangeStatus> status) const override;
     common::Result<void> createChangeRequest(
         business::domain::CourseChangeRequest request) override;
     common::Result<void> saveChangeRequest(

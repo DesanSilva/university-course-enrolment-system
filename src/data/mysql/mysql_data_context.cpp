@@ -218,6 +218,31 @@ WaitlistStatus parseWaitlistStatus(const string& value) {
     throw invalid_argument("invalid stored waitlist status");
 }
 
+string enrollmentRuleSql(EnrollmentRule rule) {
+    switch (rule) {
+    case EnrollmentRule::Prerequisite:
+        return "PREREQUISITE";
+    case EnrollmentRule::Capacity:
+        return "CAPACITY";
+    case EnrollmentRule::TimeConflict:
+        return "TIME_CONFLICT";
+    }
+    throw invalid_argument("unknown enrolment rule");
+}
+
+EnrollmentRule parseEnrollmentRule(const string& value) {
+    if (value == "PREREQUISITE") {
+        return EnrollmentRule::Prerequisite;
+    }
+    if (value == "CAPACITY") {
+        return EnrollmentRule::Capacity;
+    }
+    if (value == "TIME_CONFLICT") {
+        return EnrollmentRule::TimeConflict;
+    }
+    throw invalid_argument("invalid stored enrolment rule");
+}
+
 Result<string> lookupSingleValue(
     MySqlConnection& connection,
     const string& sql,
@@ -519,10 +544,12 @@ Result<void> MySqlDataContext::verifyConnections() {
 }
 
 Result<optional<User>> MySqlDataContext::findUser(UserId id) const {
-    return implementation_->withConnection<optional<User>>([&id](MySqlConnection& connection) {
+    return implementation_->withConnection<optional<User>>([this, &id](MySqlConnection& connection) {
+        const bool lockForUpdate = Implementation::connectionOwner_ == implementation_.get() &&
+                                   Implementation::transactionActive_;
         auto rows = connection.query(
             "SELECT user_id, name, email, status, role FROM users WHERE user_id = " +
-            quoted(connection, id.value()));
+            quoted(connection, id.value()) + (lockForUpdate ? " FOR UPDATE" : ""));
         if (!rows) {
             return failure<optional<User>>(rows.error());
         }
@@ -640,6 +667,127 @@ Result<vector<User>> MySqlDataContext::users() const {
                               parseUserStatus(row[3]), parseUserRole(row[4])});
         }
         return Result<vector<User>>::success(move(values));
+    });
+}
+
+Result<vector<User>> MySqlDataContext::usersByRole(optional<UserRole> role) const {
+    return implementation_->withConnection<vector<User>>(
+        [&role](MySqlConnection& connection) {
+            string sql = "SELECT user_id, name, email, status, role FROM users";
+            if (role) {
+                sql += " WHERE role = " + quoted(connection, userRoleSql(*role));
+            }
+            sql += " ORDER BY user_id";
+            auto rows = connection.query(sql);
+            if (!rows) {
+                return failure<vector<User>>(rows.error());
+            }
+            vector<User> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 5) {
+                    return mappingFailure<vector<User>>(
+                        "A filtered user query returned an unexpected shape.");
+                }
+                values.push_back({UserId{row[0]}, row[1], row[2],
+                                  parseUserStatus(row[3]), parseUserRole(row[4])});
+            }
+            return Result<vector<User>>::success(move(values));
+        });
+}
+
+Result<bool> MySqlDataContext::departmentExists(const string& department) const {
+    return implementation_->withConnection<bool>(
+        [&department](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT EXISTS(SELECT 1 FROM departments WHERE department_id = " +
+                quoted(connection, department) + " OR code = " +
+                quoted(connection, department) + " OR name = " +
+                quoted(connection, department) + ")");
+            if (!rows) {
+                return failure<bool>(rows.error());
+            }
+            if (rows.value().size() != 1 || rows.value().front().size() != 1) {
+                return mappingFailure<bool>(
+                    "A department-existence query returned an unexpected shape.");
+            }
+            return Result<bool>::success(rows.value().front().front() == "1");
+        });
+}
+
+Result<void> MySqlDataContext::createUser(User user) {
+    return implementation_->atomically([&user](MySqlConnection& connection) {
+        if (user.id.empty() || user.name.empty() || user.email.empty()) {
+            return Result<void>::failure(
+                "INVALID_RECORD", "A user requires an ID, name, and email address.");
+        }
+        auto inserted = connection.execute(
+            "INSERT INTO users (user_id, name, email, role, status) VALUES (" +
+            quoted(connection, user.id.value()) + ", " + quoted(connection, user.name) + ", " +
+            quoted(connection, user.email) + ", " + quoted(connection, userRoleSql(user.role)) +
+            ", " + quoted(connection, userStatusSql(user.status)) + ") "
+            "ON DUPLICATE KEY UPDATE user_id = user_id");
+        if (!inserted) {
+            return inserted;
+        }
+        return ensureInserted(connection, "The new User ID or email");
+    });
+}
+
+Result<void> MySqlDataContext::createStudent(Student student) {
+    return implementation_->atomically([&student](MySqlConnection& connection) {
+        if (student.id.empty() || student.userId.empty() || student.programId.empty()) {
+            return Result<void>::failure(
+                "INVALID_RECORD", "A Student requires student, User, and programme IDs.");
+        }
+        auto role = requireRole(connection, student.userId, UserRole::Student);
+        if (!role) {
+            return role;
+        }
+        auto inserted = connection.execute(
+            "INSERT INTO students (student_id, user_id, program_id) VALUES (" +
+            quoted(connection, student.id.value()) + ", " +
+            quoted(connection, student.userId.value()) + ", " +
+            quoted(connection, student.programId.value()) + ") "
+            "ON DUPLICATE KEY UPDATE student_id = student_id");
+        if (!inserted) {
+            return inserted;
+        }
+        return ensureInserted(connection, "The new Student ID or linked User");
+    });
+}
+
+Result<void> MySqlDataContext::createFaculty(Faculty faculty) {
+    return implementation_->atomically([&faculty](MySqlConnection& connection) {
+        if (faculty.id.empty() || faculty.userId.empty() || faculty.department.empty()) {
+            return Result<void>::failure(
+                "INVALID_RECORD", "A Faculty profile requires IDs and a department.");
+        }
+        auto role = requireRole(connection, faculty.userId, UserRole::Faculty);
+        if (!role) {
+            return role;
+        }
+        auto department = lookupSingleValue(
+            connection,
+            "SELECT department_id FROM departments WHERE department_id = " +
+                quoted(connection, faculty.department) + " OR code = " +
+                quoted(connection, faculty.department) + " OR name = " +
+                quoted(connection, faculty.department) + " ORDER BY CASE WHEN department_id = " +
+                quoted(connection, faculty.department) + " THEN 0 WHEN code = " +
+                quoted(connection, faculty.department) + " THEN 1 ELSE 2 END, department_id LIMIT 1",
+            "The Faculty department");
+        if (!department) {
+            return failure<void>(department.error());
+        }
+        auto inserted = connection.execute(
+            "INSERT INTO faculty (faculty_id, user_id, department_id) VALUES (" +
+            quoted(connection, faculty.id.value()) + ", " +
+            quoted(connection, faculty.userId.value()) + ", " +
+            quoted(connection, department.value()) + ") "
+            "ON DUPLICATE KEY UPDATE faculty_id = faculty_id");
+        if (!inserted) {
+            return inserted;
+        }
+        return ensureInserted(connection, "The new Faculty ID or linked User");
     });
 }
 
@@ -778,11 +926,14 @@ Result<void> MySqlDataContext::saveFaculty(Faculty faculty) {
 }
 
 Result<optional<Course>> MySqlDataContext::findCourse(CourseId id) const {
-    return implementation_->withConnection<optional<Course>>([&id](MySqlConnection& connection) {
+    return implementation_->withConnection<optional<Course>>([this, &id](MySqlConnection& connection) {
+        const bool lockForUpdate = Implementation::connectionOwner_ == implementation_.get() &&
+                                   Implementation::transactionActive_;
         auto rows = connection.query(
             "SELECT c.course_id, c.code, d.name, c.course_number, c.name, c.description, c.credits "
             "FROM courses c JOIN departments d ON d.department_id = c.department_id "
-            "WHERE c.course_id = " + quoted(connection, id.value()));
+            "WHERE c.course_id = " + quoted(connection, id.value()) +
+            (lockForUpdate ? " FOR UPDATE" : ""));
         if (!rows) {
             return failure<optional<Course>>(rows.error());
         }
@@ -1060,6 +1211,84 @@ Result<void> MySqlDataContext::saveCourse(Course course) {
     });
 }
 
+Result<void> MySqlDataContext::createCourse(Course course) {
+    return implementation_->atomically([&course](MySqlConnection& connection) {
+        if (course.id.empty() || course.code.empty() || course.department.empty() ||
+            course.courseNumber.empty() || course.name.empty()) {
+            return Result<void>::failure(
+                "INVALID_RECORD", "A Course requires an ID, code, department, number, and name.");
+        }
+        auto department = lookupSingleValue(
+            connection,
+            "SELECT department_id FROM departments WHERE department_id = " +
+                quoted(connection, course.department) + " OR code = " +
+                quoted(connection, course.department) + " OR name = " +
+                quoted(connection, course.department) + " ORDER BY CASE WHEN department_id = " +
+                quoted(connection, course.department) + " THEN 0 WHEN code = " +
+                quoted(connection, course.department) + " THEN 1 ELSE 2 END, department_id LIMIT 1",
+            "The Course department");
+        if (!department) {
+            return failure<void>(department.error());
+        }
+        auto inserted = connection.execute(
+            "INSERT INTO courses "
+            "(course_id, department_id, course_number, code, name, description, credits) VALUES (" +
+            quoted(connection, course.id.value()) + ", " + quoted(connection, department.value()) +
+            ", " + quoted(connection, course.courseNumber) + ", " +
+            quoted(connection, course.code) + ", " + quoted(connection, course.name) + ", " +
+            quoted(connection, course.description) + ", " + to_string(course.credits) +
+            ") ON DUPLICATE KEY UPDATE course_id = course_id");
+        if (!inserted) {
+            return inserted;
+        }
+        auto unique = ensureInserted(connection, "The new Course ID, code, or department/number");
+        if (!unique) {
+            return unique;
+        }
+        for (const auto& prerequisiteId : course.prerequisiteCourseIds) {
+            auto prerequisite = connection.execute(
+                "INSERT INTO course_prerequisites (course_id, prerequisite_course_id) VALUES (" +
+                quoted(connection, course.id.value()) + ", " +
+                quoted(connection, prerequisiteId.value()) + ")");
+            if (!prerequisite) {
+                return prerequisite;
+            }
+        }
+        return Result<void>::success();
+    });
+}
+
+Result<bool> MySqlDataContext::courseHasReferences(CourseId courseId) const {
+    return implementation_->withConnection<bool>(
+        [&courseId](MySqlConnection& connection) {
+            const string id = quoted(connection, courseId.value());
+            auto rows = connection.query(
+                "SELECT (EXISTS(SELECT 1 FROM course_offerings WHERE course_id = " + id +
+                ") OR EXISTS(SELECT 1 FROM program_required_courses WHERE course_id = " + id +
+                ") OR EXISTS(SELECT 1 FROM course_prerequisites WHERE prerequisite_course_id = " + id +
+                ") OR EXISTS(SELECT 1 FROM course_change_requests WHERE course_id = " + id + "))");
+            if (!rows) {
+                return failure<bool>(rows.error());
+            }
+            if (rows.value().size() != 1 || rows.value().front().size() != 1) {
+                return mappingFailure<bool>(
+                    "A Course-reference query returned an unexpected shape.");
+            }
+            return Result<bool>::success(rows.value().front().front() == "1");
+        });
+}
+
+Result<void> MySqlDataContext::deleteCourse(CourseId courseId) {
+    return implementation_->atomically([&courseId](MySqlConnection& connection) {
+        auto removed = connection.execute(
+            "DELETE FROM courses WHERE course_id = " + quoted(connection, courseId.value()));
+        if (!removed) {
+            return removed;
+        }
+        return ensureAffected(connection, "The Course");
+    });
+}
+
 Result<vector<FacultyOfferingItem>> MySqlDataContext::assignedOfferings(
     FacultyId facultyId) const {
     return implementation_->withConnection<vector<FacultyOfferingItem>>(
@@ -1186,6 +1415,20 @@ Result<void> MySqlDataContext::saveOffering(CourseOffering offering) {
     });
 }
 
+Result<void> MySqlDataContext::updateOfferingCapacity(
+    OfferingId offeringId,
+    size_t capacity) {
+    return implementation_->atomically([&offeringId, capacity](MySqlConnection& connection) {
+        auto updated = connection.execute(
+            "UPDATE course_offerings SET capacity = " + to_string(capacity) +
+            " WHERE offering_id = " + quoted(connection, offeringId.value()));
+        if (!updated) {
+            return updated;
+        }
+        return ensureAffected(connection, "The Course offering");
+    });
+}
+
 Result<optional<DegreeProgram>> MySqlDataContext::findProgram(
     ProgramId id) const {
     return implementation_->withConnection<optional<DegreeProgram>>(
@@ -1303,6 +1546,51 @@ Result<void> MySqlDataContext::saveProgram(DegreeProgram program) {
                 quoted(connection, courseId.value()) + ")");
             if (!inserted) {
                 return inserted;
+            }
+        }
+        return Result<void>::success();
+    });
+}
+
+Result<void> MySqlDataContext::createProgram(DegreeProgram program) {
+    return implementation_->atomically([&program](MySqlConnection& connection) {
+        if (program.id.empty() || program.name.empty() || program.department.empty()) {
+            return Result<void>::failure(
+                "INVALID_RECORD", "A Programme requires an ID, name, and department.");
+        }
+        auto department = lookupSingleValue(
+            connection,
+            "SELECT department_id FROM departments WHERE department_id = " +
+                quoted(connection, program.department) + " OR code = " +
+                quoted(connection, program.department) + " OR name = " +
+                quoted(connection, program.department) + " ORDER BY CASE WHEN department_id = " +
+                quoted(connection, program.department) + " THEN 0 WHEN code = " +
+                quoted(connection, program.department) + " THEN 1 ELSE 2 END, department_id LIMIT 1",
+            "The Programme department");
+        if (!department) {
+            return failure<void>(department.error());
+        }
+        auto inserted = connection.execute(
+            "INSERT INTO degree_programs "
+            "(program_id, department_id, name, required_credits) VALUES (" +
+            quoted(connection, program.id.value()) + ", " + quoted(connection, department.value()) +
+            ", " + quoted(connection, program.name) + ", " +
+            to_string(program.requiredCredits) +
+            ") ON DUPLICATE KEY UPDATE program_id = program_id");
+        if (!inserted) {
+            return inserted;
+        }
+        auto unique = ensureInserted(connection, "The new Programme ID or name");
+        if (!unique) {
+            return unique;
+        }
+        for (const auto& courseId : program.requiredCourseIds) {
+            auto requirement = connection.execute(
+                "INSERT INTO program_required_courses (program_id, course_id) VALUES (" +
+                quoted(connection, program.id.value()) + ", " +
+                quoted(connection, courseId.value()) + ")");
+            if (!requirement) {
+                return requirement;
             }
         }
         return Result<void>::success();
@@ -1497,6 +1785,58 @@ Result<vector<FacultyRosterEntry>> MySqlDataContext::activeRosterForOffering(
                     row[4], row[5]});
             }
             return Result<vector<FacultyRosterEntry>>::success(move(values));
+        });
+}
+
+Result<optional<EnrollmentOverride>> MySqlDataContext::findEnrollmentOverride(
+    EnrollmentOverrideId id) const {
+    return implementation_->withConnection<optional<EnrollmentOverride>>(
+        [&id](MySqlConnection& connection) {
+            auto rows = connection.query(
+                "SELECT override_id, administrator_user_id, enrollment_id, bypassed_rule, reason "
+                "FROM enrollment_overrides WHERE override_id = " +
+                quoted(connection, id.value()));
+            if (!rows) {
+                return failure<optional<EnrollmentOverride>>(rows.error());
+            }
+            if (rows.value().empty()) {
+                return Result<optional<EnrollmentOverride>>::success(nullopt);
+            }
+            if (rows.value().size() != 1 || rows.value().front().size() != 5) {
+                return mappingFailure<optional<EnrollmentOverride>>(
+                    "An enrolment-override query returned an unexpected shape.");
+            }
+            const auto& row = rows.value().front();
+            return Result<optional<EnrollmentOverride>>::success(EnrollmentOverride{
+                EnrollmentOverrideId{row[0]}, UserId{row[1]}, EnrollmentId{row[2]},
+                parseEnrollmentRule(row[3]), row[4]});
+        });
+}
+
+Result<void> MySqlDataContext::createEnrollmentOverride(
+    EnrollmentOverride enrollmentOverride) {
+    return implementation_->atomically(
+        [&enrollmentOverride](MySqlConnection& connection) {
+            if (enrollmentOverride.id.empty() ||
+                enrollmentOverride.administratorUserId.empty() ||
+                enrollmentOverride.enrollmentId.empty() || enrollmentOverride.reason.empty()) {
+                return Result<void>::failure(
+                    "INVALID_RECORD",
+                    "An enrolment override requires IDs, a selected rule, and a reason.");
+            }
+            auto inserted = connection.execute(
+                "INSERT INTO enrollment_overrides "
+                "(override_id, administrator_user_id, enrollment_id, bypassed_rule, reason) VALUES (" +
+                quoted(connection, enrollmentOverride.id.value()) + ", " +
+                quoted(connection, enrollmentOverride.administratorUserId.value()) + ", " +
+                quoted(connection, enrollmentOverride.enrollmentId.value()) + ", " +
+                quoted(connection, enrollmentRuleSql(enrollmentOverride.bypassedRule)) + ", " +
+                quoted(connection, enrollmentOverride.reason) +
+                ") ON DUPLICATE KEY UPDATE override_id = override_id");
+            if (!inserted) {
+                return inserted;
+            }
+            return ensureInserted(connection, "The new enrolment-override ID");
         });
 }
 
@@ -1777,12 +2117,14 @@ Result<void> MySqlDataContext::saveGradeRecord(GradeRecord record) {
 Result<optional<CourseChangeRequest>> MySqlDataContext::findChangeRequest(
     ChangeRequestId id) const {
     return implementation_->withConnection<optional<CourseChangeRequest>>(
-        [&id](MySqlConnection& connection) {
+        [this, &id](MySqlConnection& connection) {
+            const bool lockForUpdate = Implementation::connectionOwner_ == implementation_.get() &&
+                                       Implementation::transactionActive_;
             auto rows = connection.query(
                 "SELECT change_request_id, faculty_id, course_id, COALESCE(offering_id, ''), "
                 "change_type, status, requested_value FROM course_change_requests "
                 "WHERE change_request_id = " +
-                quoted(connection, id.value()));
+                quoted(connection, id.value()) + (lockForUpdate ? " FOR UPDATE" : ""));
             if (!rows) {
                 return failure<optional<CourseChangeRequest>>(rows.error());
             }
@@ -1856,6 +2198,39 @@ Result<vector<CourseChangeRequest>> MySqlDataContext::changeRequestsForFaculty(
                 if (!request.value()) {
                     return mappingFailure<vector<CourseChangeRequest>>(
                         "A Faculty change request disappeared during its read.");
+                }
+                values.push_back(*request.value());
+            }
+            return Result<vector<CourseChangeRequest>>::success(move(values));
+        });
+}
+
+Result<vector<CourseChangeRequest>> MySqlDataContext::changeRequestsByStatus(
+    optional<CourseChangeStatus> status) const {
+    return implementation_->withConnection<vector<CourseChangeRequest>>(
+        [this, &status](MySqlConnection& connection) {
+            string sql = "SELECT change_request_id FROM course_change_requests";
+            if (status) {
+                sql += " WHERE status = " + quoted(connection, changeStatusSql(*status));
+            }
+            sql += " ORDER BY change_request_id";
+            auto rows = connection.query(sql);
+            if (!rows) {
+                return failure<vector<CourseChangeRequest>>(rows.error());
+            }
+            vector<CourseChangeRequest> values;
+            for (const auto& row : rows.value()) {
+                if (row.size() != 1) {
+                    return mappingFailure<vector<CourseChangeRequest>>(
+                        "A filtered change-request query returned an unexpected shape.");
+                }
+                auto request = findChangeRequest(ChangeRequestId{row[0]});
+                if (!request) {
+                    return failure<vector<CourseChangeRequest>>(request.error());
+                }
+                if (!request.value()) {
+                    return mappingFailure<vector<CourseChangeRequest>>(
+                        "A filtered change request disappeared during its read.");
                 }
                 values.push_back(*request.value());
             }

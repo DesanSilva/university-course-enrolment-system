@@ -4,6 +4,7 @@
 #include "nexusenroll/common/result.hpp"
 
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace nexusenroll::data::contracts {
@@ -23,7 +24,13 @@ public:
     virtual common::Result<std::vector<business::domain::User>> users() const = 0;
     virtual common::Result<std::vector<business::domain::Student>> students() const = 0;
     virtual common::Result<std::vector<business::domain::Faculty>> facultyMembers() const = 0;
+    virtual common::Result<std::vector<business::domain::User>> usersByRole(
+        std::optional<business::domain::UserRole> role) const = 0;
+    virtual common::Result<bool> departmentExists(const std::string& department) const = 0;
 
+    virtual common::Result<void> createUser(business::domain::User user) = 0;
+    virtual common::Result<void> createStudent(business::domain::Student student) = 0;
+    virtual common::Result<void> createFaculty(business::domain::Faculty faculty) = 0;
     virtual common::Result<void> saveUser(business::domain::User user) = 0;
     virtual common::Result<void> saveStudent(business::domain::Student student) = 0;
     virtual common::Result<void> saveFaculty(business::domain::Faculty faculty) = 0;

@@ -108,6 +108,13 @@ public:
         OfferingId offeringId) const override {
         return store_.activeRosterForOffering(move(offeringId));
     }
+    Result<optional<EnrollmentOverride>> findEnrollmentOverride(
+        EnrollmentOverrideId id) const override {
+        return store_.findEnrollmentOverride(move(id));
+    }
+    Result<void> createEnrollmentOverride(EnrollmentOverride value) override {
+        return store_.createEnrollmentOverride(move(value));
+    }
     Result<void> saveEnrollment(Enrollment enrollment) override {
         ++saveCount_;
         if (saveCount_ == failureNumber_) {
