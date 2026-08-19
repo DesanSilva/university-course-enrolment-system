@@ -1079,7 +1079,8 @@ Result<vector<CatalogueItem>> MySqlDataContext::browseCatalogue(
             if (!filter.department.empty()) {
                 predicates.push_back(
                     "(d.code = " + quoted(connection, filter.department) +
-                    " OR d.name = " + quoted(connection, filter.department) + ")");
+                    " OR d.name = " + quoted(connection, filter.department) +
+                    " OR d.department_id = " + quoted(connection, filter.department) + ")");
             }
             if (!filter.courseNumber.empty()) {
                 predicates.push_back(

@@ -140,4 +140,54 @@ struct FacultyGradeStateEntry {
     std::optional<GradeRecord> grade;
 };
 
+struct EnrollmentReportItem {
+    Course course;
+    CourseOffering offering;
+    std::string instructorName;
+    std::string department;
+    std::size_t enrolledCount;
+    std::size_t capacity;
+    double utilizationRate;
+};
+
+struct FacultyWorkloadOfferingItem {
+    common::OfferingId offeringId;
+    common::CourseId courseId;
+    std::string courseCode;
+    std::string courseName;
+    std::size_t enrolledCount;
+    std::size_t capacity;
+};
+
+struct FacultyWorkloadReportItem {
+    common::FacultyId facultyId;
+    std::string facultyName;
+    std::string facultyEmail;
+    std::string department;
+    std::string semester;
+    std::size_t offeringCount;
+    std::size_t totalEnrolledStudents;
+    std::vector<FacultyWorkloadOfferingItem> assignedOfferings;
+};
+
+struct CoursePopularityReportItem {
+    Course course;
+    CourseOffering offering;
+    std::string semester;
+    std::size_t enrolledCount;
+    std::size_t capacity;
+    double utilizationRate;
+};
+
+struct CapacityReportItem {
+    Course course;
+    CourseOffering offering;
+    std::string instructorName;
+    std::string department;
+    std::string semester;
+    std::size_t enrolledCount;
+    std::size_t capacity;
+    double utilizationRate;
+};
+
 }
