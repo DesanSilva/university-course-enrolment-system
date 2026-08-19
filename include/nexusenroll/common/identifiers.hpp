@@ -46,6 +46,7 @@ struct ProgramIdTag;
 struct GradeRecordIdTag;
 struct ChangeRequestIdTag;
 struct WaitlistEntryIdTag;
+struct EnrollmentOverrideIdTag;
 
 using UserId = Identifier<UserIdTag>;
 using StudentId = Identifier<StudentIdTag>;
@@ -57,5 +58,6 @@ using ProgramId = Identifier<ProgramIdTag>;
 using GradeRecordId = Identifier<GradeRecordIdTag>;
 using ChangeRequestId = Identifier<ChangeRequestIdTag>;
 using WaitlistEntryId = Identifier<WaitlistEntryIdTag>;
+using EnrollmentOverrideId = Identifier<EnrollmentOverrideIdTag>;
 
 }

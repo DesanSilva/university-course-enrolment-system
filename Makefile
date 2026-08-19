@@ -94,6 +94,7 @@ $(MYSQL_TEST_TARGET): $(MYSQL_TEST_OBJECTS) $(DATA_OBJECTS) $(MYSQL_BUSINESS_OBJ
 
 mysql-schema:
 	mysql $(MYSQL_ARGS) < database/mysql/001_schema.sql
+	mysql $(MYSQL_ARGS) < database/mysql/003_enrollment_overrides.sql
 
 mysql-seed:
 	mysql $(MYSQL_ARGS) < database/mysql/002_seed.sql

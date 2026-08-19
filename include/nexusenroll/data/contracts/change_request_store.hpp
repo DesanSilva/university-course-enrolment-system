@@ -17,6 +17,9 @@ public:
     virtual common::Result<std::vector<business::domain::CourseChangeRequest>> changeRequests() const = 0;
     virtual common::Result<std::vector<business::domain::CourseChangeRequest>>
     changeRequestsForFaculty(common::FacultyId facultyId) const = 0;
+    virtual common::Result<std::vector<business::domain::CourseChangeRequest>>
+    changeRequestsByStatus(
+        std::optional<business::domain::CourseChangeStatus> status) const = 0;
     virtual common::Result<void> createChangeRequest(
         business::domain::CourseChangeRequest request) = 0;
     virtual common::Result<void> saveChangeRequest(

@@ -17,6 +17,7 @@ enum class GradeLifecycle { Pending, Submitted };
 enum class CourseChangeStatus { Pending, Approved, Rejected };
 enum class CourseChangeType { Description, Prerequisites, Capacity };
 enum class WaitlistStatus { Waiting, Offered, Removed };
+enum class EnrollmentRule { Prerequisite, Capacity, TimeConflict };
 
 struct User {
     common::UserId id;
@@ -99,6 +100,14 @@ struct WaitlistEntry {
     common::OfferingId offeringId;
     std::size_t position;
     WaitlistStatus status;
+};
+
+struct EnrollmentOverride {
+    common::EnrollmentOverrideId id;
+    common::UserId administratorUserId;
+    common::EnrollmentId enrollmentId;
+    EnrollmentRule bypassedRule;
+    std::string reason;
 };
 
 struct CatalogueFilter {
