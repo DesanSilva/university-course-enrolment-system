@@ -54,4 +54,61 @@ private:
     const data::contracts::IChangeRequestStore& changeRequestStore_;
 };
 
+class GetEnrollmentReportQuery {
+public:
+    GetEnrollmentReportQuery(
+        std::optional<std::string> department,
+        std::optional<std::string> semester,
+        const data::contracts::ICourseStore& courseStore);
+    common::Result<std::vector<domain::EnrollmentReportItem>> execute() const;
+
+private:
+    std::optional<std::string> department_;
+    std::optional<std::string> semester_;
+    const data::contracts::ICourseStore& courseStore_;
+};
+
+class GetFacultyWorkloadReportQuery {
+public:
+    GetFacultyWorkloadReportQuery(
+        std::optional<std::string> semester,
+        const data::contracts::IUserStore& userStore,
+        const data::contracts::ICourseStore& courseStore);
+    common::Result<std::vector<domain::FacultyWorkloadReportItem>> execute() const;
+
+private:
+    std::optional<std::string> semester_;
+    const data::contracts::IUserStore& userStore_;
+    const data::contracts::ICourseStore& courseStore_;
+};
+
+class GetCoursePopularityReportQuery {
+public:
+    GetCoursePopularityReportQuery(
+        std::optional<std::string> semester,
+        const data::contracts::ICourseStore& courseStore);
+    common::Result<std::vector<domain::CoursePopularityReportItem>> execute() const;
+
+private:
+    std::optional<std::string> semester_;
+    const data::contracts::ICourseStore& courseStore_;
+};
+
+class GetCapacityReportQuery {
+public:
+    GetCapacityReportQuery(
+        std::optional<std::string> department,
+        std::optional<std::string> semester,
+        double minUtilization,
+        const data::contracts::ICourseStore& courseStore);
+    common::Result<std::vector<domain::CapacityReportItem>> execute() const;
+
+private:
+    std::optional<std::string> department_;
+    std::optional<std::string> semester_;
+    double minUtilization_;
+    const data::contracts::ICourseStore& courseStore_;
+};
+
 }
+
