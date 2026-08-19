@@ -591,6 +591,158 @@ void registerAdministratorRoutes(
                 dependencies.transactionBoundary);
             return actionResponse(200, "COURSE_CHANGE_REJECTED", "requestId", id, command.execute());
         });
+
+    CROW_ROUTE(application, "/api/v1/admin/reports/enrolment")
+        .methods(crow::HTTPMethod::GET)([dependencies](const crow::request& request) {
+            optional<string> department;
+            optional<string> semester;
+            if (const char* val = request.url_params.get("department")) department = val;
+            if (const char* val = request.url_params.get("semester")) semester = val;
+
+            GetEnrollmentReportQuery query(department, semester, dependencies.courseStore);
+            auto result = query.execute();
+            if (!result) return errorResponse(statusFor(result.error()), result.error());
+
+            crow::json::wvalue::list items;
+            for (const auto& item : result.value()) {
+                crow::json::wvalue val;
+                val["courseId"] = item.course.id.value();
+                val["code"] = item.course.code;
+                val["courseName"] = item.course.name;
+                val["department"] = item.department;
+                val["offeringId"] = item.offering.id.value();
+                val["semester"] = item.offering.semester;
+                val["instructorId"] = item.offering.instructorId.value();
+                val["instructorName"] = item.instructorName;
+                val["enrolledCount"] = static_cast<uint64_t>(item.enrolledCount);
+                val["capacity"] = static_cast<uint64_t>(item.capacity);
+                val["utilizationRate"] = item.utilizationRate;
+                items.push_back(move(val));
+            }
+            crow::json::wvalue body;
+            body["ok"] = true;
+            body["data"]["items"] = crow::json::wvalue(items);
+            return crow::response(200, move(body));
+        });
+
+    CROW_ROUTE(application, "/api/v1/admin/reports/faculty-workload")
+        .methods(crow::HTTPMethod::GET)([dependencies](const crow::request& request) {
+            optional<string> semester;
+            if (const char* val = request.url_params.get("semester")) semester = val;
+
+            GetFacultyWorkloadReportQuery query(semester, dependencies.userStore, dependencies.courseStore);
+            auto result = query.execute();
+            if (!result) return errorResponse(statusFor(result.error()), result.error());
+
+            crow::json::wvalue::list items;
+            for (const auto& item : result.value()) {
+                crow::json::wvalue val;
+                val["facultyId"] = item.facultyId.value();
+                val["facultyName"] = item.facultyName;
+                val["facultyEmail"] = item.facultyEmail;
+                val["department"] = item.department;
+                val["semester"] = item.semester;
+                val["offeringCount"] = static_cast<uint64_t>(item.offeringCount);
+                val["totalEnrolledStudents"] = static_cast<uint64_t>(item.totalEnrolledStudents);
+                crow::json::wvalue::list offerings;
+                for (const auto& off : item.assignedOfferings) {
+                    crow::json::wvalue offVal;
+                    offVal["offeringId"] = off.offeringId.value();
+                    offVal["courseId"] = off.courseId.value();
+                    offVal["courseCode"] = off.courseCode;
+                    offVal["courseName"] = off.courseName;
+                    offVal["enrolledCount"] = static_cast<uint64_t>(off.enrolledCount);
+                    offVal["capacity"] = static_cast<uint64_t>(off.capacity);
+                    offerings.push_back(move(offVal));
+                }
+                val["offerings"] = crow::json::wvalue(offerings);
+                items.push_back(move(val));
+            }
+            crow::json::wvalue body;
+            body["ok"] = true;
+            body["data"]["items"] = crow::json::wvalue(items);
+            return crow::response(200, move(body));
+        });
+
+    CROW_ROUTE(application, "/api/v1/admin/reports/course-popularity")
+        .methods(crow::HTTPMethod::GET)([dependencies](const crow::request& request) {
+            optional<string> semester;
+            if (const char* val = request.url_params.get("semester")) semester = val;
+
+            GetCoursePopularityReportQuery query(semester, dependencies.courseStore);
+            auto result = query.execute();
+            if (!result) return errorResponse(statusFor(result.error()), result.error());
+
+            crow::json::wvalue::list items;
+            for (const auto& item : result.value()) {
+                crow::json::wvalue val;
+                val["courseId"] = item.course.id.value();
+                val["code"] = item.course.code;
+                val["courseName"] = item.course.name;
+                val["department"] = item.course.department;
+                val["offeringId"] = item.offering.id.value();
+                val["semester"] = item.semester;
+                val["enrolledCount"] = static_cast<uint64_t>(item.enrolledCount);
+                val["capacity"] = static_cast<uint64_t>(item.capacity);
+                val["utilizationRate"] = item.utilizationRate;
+                items.push_back(move(val));
+            }
+            crow::json::wvalue body;
+            body["ok"] = true;
+            body["data"]["items"] = crow::json::wvalue(items);
+            return crow::response(200, move(body));
+        });
+
+    CROW_ROUTE(application, "/api/v1/admin/reports/capacity")
+        .methods(crow::HTTPMethod::GET)([dependencies](const crow::request& request) {
+            optional<string> department;
+            optional<string> semester;
+            if (const char* val = request.url_params.get("department")) department = val;
+            if (const char* val = request.url_params.get("semester")) semester = val;
+
+            const char* minUtilParam = request.url_params.get("minUtilization");
+            if (!minUtilParam) {
+                return invalidRequest("minUtilization query parameter is required.");
+            }
+
+            double minUtilization = 0.0;
+            try {
+                size_t pos = 0;
+                const std::string paramStr(minUtilParam);
+                minUtilization = std::stod(paramStr, &pos);
+                if (pos != paramStr.size() || minUtilization < 0.0 || minUtilization > 1.0) {
+                    return invalidRequest("minUtilization query parameter must be a valid number between 0.0 and 1.0.");
+                }
+            } catch (...) {
+                return invalidRequest("minUtilization query parameter must be a valid number between 0.0 and 1.0.");
+            }
+
+            GetCapacityReportQuery query(department, semester, minUtilization, dependencies.courseStore);
+            auto result = query.execute();
+            if (!result) return errorResponse(statusFor(result.error()), result.error());
+
+            crow::json::wvalue::list items;
+            for (const auto& item : result.value()) {
+                crow::json::wvalue val;
+                val["courseId"] = item.course.id.value();
+                val["code"] = item.course.code;
+                val["courseName"] = item.course.name;
+                val["department"] = item.department;
+                val["offeringId"] = item.offering.id.value();
+                val["semester"] = item.semester;
+                val["instructorId"] = item.offering.instructorId.value();
+                val["instructorName"] = item.instructorName;
+                val["enrolledCount"] = static_cast<uint64_t>(item.enrolledCount);
+                val["capacity"] = static_cast<uint64_t>(item.capacity);
+                val["utilizationRate"] = item.utilizationRate;
+                items.push_back(move(val));
+            }
+            crow::json::wvalue body;
+            body["ok"] = true;
+            body["data"]["items"] = crow::json::wvalue(items);
+            return crow::response(200, move(body));
+        });
 }
+
 
 }
