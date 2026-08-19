@@ -113,6 +113,18 @@ public:
     Result<vector<Faculty>> facultyMembers() const override {
         return Result<vector<Faculty>>::success(facultyValues);
     }
+    Result<vector<User>> usersByRole(optional<UserRole> role) const override {
+        vector<User> values;
+        copy_if(userValues.begin(), userValues.end(), back_inserter(values),
+                [&role](const User& user) { return !role || user.role == *role; });
+        return Result<vector<User>>::success(move(values));
+    }
+    Result<bool> departmentExists(const string&) const override {
+        return Result<bool>::success(true);
+    }
+    Result<void> createUser(User user) override { return saveUser(move(user)); }
+    Result<void> createStudent(Student student) override { return saveStudent(move(student)); }
+    Result<void> createFaculty(Faculty faculty) override { return saveFaculty(move(faculty)); }
 
     Result<void> saveUser(User) override {
         ++writeCount;

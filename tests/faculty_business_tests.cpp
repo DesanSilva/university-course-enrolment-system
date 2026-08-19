@@ -78,6 +78,18 @@ public:
     Result<vector<Faculty>> facultyMembers() const override {
         return Result<vector<Faculty>>::success(faculty_);
     }
+    Result<vector<User>> usersByRole(optional<UserRole> role) const override {
+        vector<User> values;
+        copy_if(users_.begin(), users_.end(), back_inserter(values),
+                [&role](const User& user) { return !role || user.role == *role; });
+        return Result<vector<User>>::success(move(values));
+    }
+    Result<bool> departmentExists(const string&) const override {
+        return Result<bool>::success(true);
+    }
+    Result<void> createUser(User value) override { return save(users_, move(value)); }
+    Result<void> createStudent(Student value) override { return save(students_, move(value)); }
+    Result<void> createFaculty(Faculty value) override { return save(faculty_, move(value)); }
     Result<void> saveUser(User value) override { return save(users_, move(value)); }
     Result<void> saveStudent(Student value) override { return save(students_, move(value)); }
     Result<void> saveFaculty(Faculty value) override { return save(faculty_, move(value)); }
@@ -131,9 +143,25 @@ public:
                 return offering.instructorId == facultyId && offering.courseId == courseId;
             }));
     }
+    Result<bool> courseHasReferences(CourseId) const override {
+        return Result<bool>::success(false);
+    }
+    Result<void> createCourse(Course value) override { return save(courses_, move(value)); }
     Result<void> saveCourse(Course value) override { return save(courses_, move(value)); }
+    Result<void> deleteCourse(CourseId id) override {
+        courses_.erase(remove_if(courses_.begin(), courses_.end(),
+            [&id](const Course& value) { return value.id == id; }), courses_.end());
+        return Result<void>::success();
+    }
     Result<void> saveOffering(CourseOffering value) override {
         return save(offerings_, move(value));
+    }
+    Result<void> updateOfferingCapacity(OfferingId id, size_t capacity) override {
+        auto found = find_if(offerings_.begin(), offerings_.end(),
+                             [&id](const CourseOffering& value) { return value.id == id; });
+        if (found == offerings_.end()) return Result<void>::failure("RECORD_NOT_FOUND", "Missing");
+        found->capacity = capacity;
+        return Result<void>::success();
     }
 
     Result<optional<Enrollment>> findEnrollment(EnrollmentId id) const override {
@@ -178,6 +206,12 @@ public:
         });
         return Result<vector<FacultyRosterEntry>>::success(move(values));
     }
+    Result<optional<EnrollmentOverride>> findEnrollmentOverride(EnrollmentOverrideId) const override {
+        return Result<optional<EnrollmentOverride>>::success(nullopt);
+    }
+    Result<void> createEnrollmentOverride(EnrollmentOverride) override {
+        return Result<void>::failure("UNUSED", "Unused in Faculty tests.");
+    }
     Result<void> saveEnrollment(Enrollment value) override {
         return save(enrollments_, move(value));
     }
@@ -191,6 +225,7 @@ public:
     Result<vector<DegreeProgram>> programs() const override {
         return Result<vector<DegreeProgram>>::success(programs_);
     }
+    Result<void> createProgram(DegreeProgram value) override { return save(programs_, move(value)); }
     Result<void> saveProgram(DegreeProgram value) override { return save(programs_, move(value)); }
 
     Result<optional<GradeRecord>> findGradeRecord(GradeRecordId id) const override {
@@ -272,6 +307,15 @@ public:
         sort(values.begin(), values.end(), [](const auto& left, const auto& right) {
             return left.id < right.id;
         });
+        return Result<vector<CourseChangeRequest>>::success(move(values));
+    }
+    Result<vector<CourseChangeRequest>> changeRequestsByStatus(
+        optional<CourseChangeStatus> status) const override {
+        vector<CourseChangeRequest> values;
+        copy_if(changes_.begin(), changes_.end(), back_inserter(values),
+                [&status](const CourseChangeRequest& value) {
+                    return !status || value.status == *status;
+                });
         return Result<vector<CourseChangeRequest>>::success(move(values));
     }
     Result<void> createChangeRequest(CourseChangeRequest value) override {

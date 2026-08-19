@@ -89,6 +89,18 @@ public:
     Result<vector<Faculty>> facultyMembers() const override {
         return Result<vector<Faculty>>::success(facultyValues);
     }
+    Result<vector<User>> usersByRole(optional<UserRole> role) const override {
+        vector<User> values;
+        copy_if(userValues.begin(), userValues.end(), back_inserter(values),
+                [&role](const User& user) { return !role || user.role == *role; });
+        return Result<vector<User>>::success(move(values));
+    }
+    Result<bool> departmentExists(const string&) const override {
+        return Result<bool>::success(true);
+    }
+    Result<void> createUser(User value) override { return save(userValues, move(value)); }
+    Result<void> createStudent(Student value) override { return save(studentValues, move(value)); }
+    Result<void> createFaculty(Faculty value) override { return save(facultyValues, move(value)); }
     Result<void> saveUser(User value) override { return save(userValues, move(value)); }
     Result<void> saveStudent(Student value) override { return save(studentValues, move(value)); }
     Result<void> saveFaculty(Faculty value) override { return save(facultyValues, move(value)); }
@@ -143,9 +155,25 @@ public:
     Result<bool> facultyTeachesCourse(FacultyId, CourseId) const override {
         return Result<bool>::success(false);
     }
+    Result<bool> courseHasReferences(CourseId) const override {
+        return Result<bool>::success(false);
+    }
+    Result<void> createCourse(Course value) override { return save(courseValues, move(value)); }
     Result<void> saveCourse(Course value) override { return save(courseValues, move(value)); }
+    Result<void> deleteCourse(CourseId id) override {
+        courseValues.erase(remove_if(courseValues.begin(), courseValues.end(),
+            [&id](const Course& value) { return value.id == id; }), courseValues.end());
+        return Result<void>::success();
+    }
     Result<void> saveOffering(CourseOffering value) override {
         return save(offeringValues, move(value));
+    }
+    Result<void> updateOfferingCapacity(OfferingId id, size_t capacity) override {
+        auto found = find_if(offeringValues.begin(), offeringValues.end(),
+                             [&id](const CourseOffering& value) { return value.id == id; });
+        if (found == offeringValues.end()) return Result<void>::failure("RECORD_NOT_FOUND", "Missing");
+        found->capacity = capacity;
+        return Result<void>::success();
     }
 
     Result<optional<Enrollment>> findEnrollment(EnrollmentId id) const override {
@@ -176,6 +204,12 @@ public:
     Result<vector<FacultyRosterEntry>> activeRosterForOffering(OfferingId) const override {
         return Result<vector<FacultyRosterEntry>>::success({});
     }
+    Result<optional<EnrollmentOverride>> findEnrollmentOverride(EnrollmentOverrideId id) const override {
+        return Result<optional<EnrollmentOverride>>::success(byId(overrideValues, id));
+    }
+    Result<void> createEnrollmentOverride(EnrollmentOverride value) override {
+        return save(overrideValues, move(value));
+    }
     Result<void> saveEnrollment(Enrollment value) override {
         return save(enrollmentValues, move(value));
     }
@@ -193,6 +227,9 @@ public:
     }
     Result<vector<DegreeProgram>> programs() const override {
         return Result<vector<DegreeProgram>>::success(programValues);
+    }
+    Result<void> createProgram(DegreeProgram value) override {
+        return save(programValues, move(value));
     }
     Result<void> saveProgram(DegreeProgram value) override {
         return save(programValues, move(value));
@@ -333,6 +370,7 @@ public:
     vector<DegreeProgram> programValues;
     vector<GradeRecord> gradeValues;
     vector<WaitlistEntry> waitlistValues;
+    vector<EnrollmentOverride> overrideValues;
     optional<Error> readError;
     bool failWrites{false};
     bool failWaitlistWrites{false};
