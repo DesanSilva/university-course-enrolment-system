@@ -1,4 +1,5 @@
 #include "nexusenroll/presentation/api/faculty_routes.hpp"
+#include "nexusenroll/presentation/api/route_helpers.hpp"
 
 #include "nexusenroll/business/cqrs/commands/finalize_grades_command.hpp"
 #include "nexusenroll/business/cqrs/commands/submit_course_change_request_command.hpp"
@@ -22,11 +23,7 @@ using namespace std;
 namespace {
 
 crow::response errorResponse(int status, const Error& error) {
-    crow::json::wvalue body;
-    body["ok"] = false;
-    body["error"]["code"] = error.code;
-    body["error"]["message"] = error.message;
-    return crow::response(status, move(body));
+    return makeErrorResponse(status, error);
 }
 
 crow::response invalidRequest(const string& message) {
@@ -62,65 +59,14 @@ int statusFor(const Error& error) {
     return 500;
 }
 
-const char* enrollmentStatusName(EnrollmentStatus status) {
-    switch (status) {
-    case EnrollmentStatus::Active:
-        return "ACTIVE";
-    case EnrollmentStatus::Dropped:
-        return "DROPPED";
-    case EnrollmentStatus::Completed:
-        return "COMPLETED";
-    }
-    return "UNKNOWN";
-}
+const char* enrollmentStatusName(EnrollmentStatus status) { return formatEnrollmentStatusName(status); }
 
 const char* gradeLifecycleName(GradeLifecycle lifecycle) {
     return lifecycle == GradeLifecycle::Pending ? "PENDING" : "SUBMITTED";
 }
 
-const char* changeTypeName(CourseChangeType type) {
-    switch (type) {
-    case CourseChangeType::Description:
-        return "DESCRIPTION";
-    case CourseChangeType::Prerequisites:
-        return "PREREQUISITES";
-    case CourseChangeType::Capacity:
-        return "CAPACITY";
-    }
-    return "UNKNOWN";
-}
-
-const char* changeStatusName(CourseChangeStatus status) {
-    switch (status) {
-    case CourseChangeStatus::Pending:
-        return "PENDING";
-    case CourseChangeStatus::Approved:
-        return "APPROVED";
-    case CourseChangeStatus::Rejected:
-        return "REJECTED";
-    }
-    return "UNKNOWN";
-}
-
-const char* dayName(DayOfWeek day) {
-    static constexpr const char* names[]{
-        "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY",
-        "FRIDAY", "SATURDAY", "SUNDAY"};
-    const auto index = static_cast<size_t>(day);
-    return index < 7 ? names[index] : "UNKNOWN";
-}
-
-string timeText(int minutes) {
-    const int hours = minutes / 60;
-    const int remainder = minutes % 60;
-    string value;
-    value.push_back(static_cast<char>('0' + hours / 10));
-    value.push_back(static_cast<char>('0' + hours % 10));
-    value.push_back(':');
-    value.push_back(static_cast<char>('0' + remainder / 10));
-    value.push_back(static_cast<char>('0' + remainder % 10));
-    return value;
-}
+const char* changeTypeName(CourseChangeType type) { return formatChangeTypeName(type); }
+const char* changeStatusName(CourseChangeStatus status) { return formatChangeStatusName(status); }
 
 crow::json::wvalue offeringValue(const FacultyOfferingItem& item) {
     crow::json::wvalue value;
@@ -131,16 +77,7 @@ crow::json::wvalue offeringValue(const FacultyOfferingItem& item) {
     value["semester"] = item.offering.semester;
     value["capacity"] = static_cast<uint64_t>(item.offering.capacity);
     value["activeOccupancy"] = static_cast<uint64_t>(item.offering.enrolledCount);
-    crow::json::wvalue::list schedule;
-    for (const auto& slot : item.offering.schedule) {
-        crow::json::wvalue slotValue;
-        slotValue["day"] = dayName(slot.day());
-        slotValue["start"] = timeText(slot.startMinutes());
-        slotValue["end"] = timeText(slot.endMinutes());
-        slotValue["location"] = slot.location();
-        schedule.push_back(move(slotValue));
-    }
-    value["schedule"] = crow::json::wvalue(schedule);
+    value["schedule"] = formatScheduleJson(item.offering.schedule);
     return value;
 }
 

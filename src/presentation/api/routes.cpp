@@ -1,4 +1,5 @@
 #include "nexusenroll/presentation/api/routes.hpp"
+#include "nexusenroll/presentation/api/route_helpers.hpp"
 
 #include "nexusenroll/business/cqrs/commands/drop_course_command.hpp"
 #include "nexusenroll/business/cqrs/commands/enroll_student_command.hpp"
@@ -21,15 +22,11 @@ using namespace std;
 namespace {
 
 crow::response errorResponse(int status, const Error& error) {
-    crow::json::wvalue body;
-    body["ok"] = false;
-    body["error"]["code"] = error.code;
-    body["error"]["message"] = error.message;
-    return crow::response(status, move(body));
+    return makeErrorResponse(status, error);
 }
 
 crow::response invalidRequest(const string& code, const string& message) {
-    return errorResponse(400, {code, message});
+    return makeInvalidRequest(code, message);
 }
 
 int statusFor(const Error& error) {
@@ -57,85 +54,12 @@ int statusFor(const Error& error) {
     return 500;
 }
 
-const char* roleName(UserRole role) {
-    switch (role) {
-    case UserRole::Student:
-        return "STUDENT";
-    case UserRole::Faculty:
-        return "FACULTY";
-    case UserRole::Administrator:
-        return "ADMINISTRATOR";
-    }
-    return "UNKNOWN";
-}
-
-const char* enrollmentStatusName(EnrollmentStatus status) {
-    switch (status) {
-    case EnrollmentStatus::Active:
-        return "ACTIVE";
-    case EnrollmentStatus::Dropped:
-        return "DROPPED";
-    case EnrollmentStatus::Completed:
-        return "COMPLETED";
-    }
-    return "UNKNOWN";
-}
-
-const char* waitlistStatusName(WaitlistStatus status) {
-    switch (status) {
-    case WaitlistStatus::Waiting:
-        return "WAITING";
-    case WaitlistStatus::Offered:
-        return "OFFERED";
-    case WaitlistStatus::Removed:
-        return "REMOVED";
-    }
-    return "UNKNOWN";
-}
-
-const char* dayName(DayOfWeek day) {
-    switch (day) {
-    case DayOfWeek::Monday:
-        return "MONDAY";
-    case DayOfWeek::Tuesday:
-        return "TUESDAY";
-    case DayOfWeek::Wednesday:
-        return "WEDNESDAY";
-    case DayOfWeek::Thursday:
-        return "THURSDAY";
-    case DayOfWeek::Friday:
-        return "FRIDAY";
-    case DayOfWeek::Saturday:
-        return "SATURDAY";
-    case DayOfWeek::Sunday:
-        return "SUNDAY";
-    }
-    return "UNKNOWN";
-}
-
-string timeText(int minutes) {
-    const int hours = minutes / 60;
-    const int remainingMinutes = minutes % 60;
-    string value;
-    value.push_back(static_cast<char>('0' + hours / 10));
-    value.push_back(static_cast<char>('0' + hours % 10));
-    value.push_back(':');
-    value.push_back(static_cast<char>('0' + remainingMinutes / 10));
-    value.push_back(static_cast<char>('0' + remainingMinutes % 10));
-    return value;
-}
+const char* roleName(UserRole role) { return formatRoleName(role); }
+const char* enrollmentStatusName(EnrollmentStatus status) { return formatEnrollmentStatusName(status); }
+const char* waitlistStatusName(WaitlistStatus status) { return formatWaitlistStatusName(status); }
 
 crow::json::wvalue scheduleJson(const vector<ScheduleSlot>& schedule) {
-    crow::json::wvalue::list values;
-    for (const auto& slot : schedule) {
-        crow::json::wvalue value;
-        value["day"] = dayName(slot.day());
-        value["start"] = timeText(slot.startMinutes());
-        value["end"] = timeText(slot.endMinutes());
-        value["location"] = slot.location();
-        values.push_back(move(value));
-    }
-    return crow::json::wvalue(values);
+    return formatScheduleJson(schedule);
 }
 
 crow::json::wvalue prerequisitesJson(const Course& course) {

@@ -1,4 +1,5 @@
 #include "nexusenroll/presentation/api/administrator_routes.hpp"
+#include "nexusenroll/presentation/api/route_helpers.hpp"
 
 #include "nexusenroll/business/cqrs/commands/administrator_commands.hpp"
 #include "nexusenroll/business/cqrs/queries/administrator_queries.hpp"
@@ -21,11 +22,7 @@ using namespace std;
 namespace {
 
 crow::response errorResponse(int status, const Error& error) {
-    crow::json::wvalue body;
-    body["ok"] = false;
-    body["error"]["code"] = error.code;
-    body["error"]["message"] = error.message;
-    return crow::response(status, move(body));
+    return makeErrorResponse(status, error);
 }
 
 crow::response invalidRequest(const string& message) {
@@ -64,36 +61,14 @@ int statusFor(const Error& error) {
     return 500;
 }
 
-const char* roleName(UserRole role) {
-    switch (role) {
-    case UserRole::Student: return "STUDENT";
-    case UserRole::Faculty: return "FACULTY";
-    case UserRole::Administrator: return "ADMINISTRATOR";
-    }
-    return "UNKNOWN";
-}
+const char* roleName(UserRole role) { return formatRoleName(role); }
 
 const char* userStatusName(UserStatus status) {
     return status == UserStatus::Active ? "ACTIVE" : "INACTIVE";
 }
 
-const char* changeTypeName(CourseChangeType type) {
-    switch (type) {
-    case CourseChangeType::Description: return "DESCRIPTION";
-    case CourseChangeType::Prerequisites: return "PREREQUISITES";
-    case CourseChangeType::Capacity: return "CAPACITY";
-    }
-    return "UNKNOWN";
-}
-
-const char* changeStatusName(CourseChangeStatus status) {
-    switch (status) {
-    case CourseChangeStatus::Pending: return "PENDING";
-    case CourseChangeStatus::Approved: return "APPROVED";
-    case CourseChangeStatus::Rejected: return "REJECTED";
-    }
-    return "UNKNOWN";
-}
+const char* changeTypeName(CourseChangeType type) { return formatChangeTypeName(type); }
+const char* changeStatusName(CourseChangeStatus status) { return formatChangeStatusName(status); }
 
 Result<UserRole> parseRole(const string& value) {
     if (value == "STUDENT") return Result<UserRole>::success(UserRole::Student);
