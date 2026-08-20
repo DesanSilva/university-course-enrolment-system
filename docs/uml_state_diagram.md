@@ -25,13 +25,8 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
     [*] --> Waiting : JoinWaitlistCommand
-    Waiting --> Offered : CourseSeatAvailable Event (Seat Drop)
-    Offered --> Enrolled : Accept Seat Notification
-    Waiting --> Cancelled_Removed : Student Cancel / Admin Override
-    Offered --> Expired_Removed : 24-Hour Timeout
-    Enrolled --> [*]
-    Cancelled_Removed --> [*]
-    Expired_Removed --> [*]
+    Waiting --> Removed : EnrollStudentCommand / OverrideEnrollmentCommand
+    Removed --> [*]
 ```
 
 ---
