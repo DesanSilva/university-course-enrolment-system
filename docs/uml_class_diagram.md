@@ -1,137 +1,319 @@
-# NexusEnroll — Class Diagram
+# NexusEnroll — Structural UML Class Architecture
+
+The structural design of **NexusEnroll** mirrors all components, contracts, commands, queries, patterns, and data persistence models across the codebase.
+
+---
+
+## 1. Presentation Tier & Business CQRS Structure
 
 ```mermaid
 classDiagram
-    %% Presentation Tier
     class api_routes {
-        <<utility>>
-        +registerRoutes(app, sessionService, studentDependencies)
-        +registerFacultyRoutes(app, facultyDependencies)
-        +registerAdministratorRoutes(app, adminDependencies)
+        +registerRoutes()
+        +registerFacultyRoutes()
+        +registerAdministratorRoutes()
     }
 
-    %% Business Tier - Commands
     class ICommand {
         <<interface>>
         +execute() CommandResult
     }
-    
+
     class EnrollStudentCommand {
-        -studentId_: StudentId
-        -offeringId_: OfferingId
-        -userStore_: IUserStore
-        -courseStore_: ICourseStore
-        -enrollmentStore_: IEnrollmentStore
-        -gradeStore_: IGradeStore
-        -waitlistStore_: IWaitlistStore
-        -transactionBoundary_: ITransactionBoundary
+        -StudentId studentId
+        -OfferingId offeringId
         +execute() CommandResult
     }
-    
+
     class DropCourseCommand {
-        -studentId_: StudentId
-        -offeringId_: OfferingId
-        -userStore_: IUserStore
-        -courseStore_: ICourseStore
-        -enrollmentStore_: IEnrollmentStore
-        -waitlistStore_: IWaitlistStore
-        -transactionBoundary_: ITransactionBoundary
-        -notificationPublisher_: NotificationPublisher
+        -StudentId studentId
+        -OfferingId offeringId
         +execute() CommandResult
     }
 
-    ICommand <|-- EnrollStudentCommand
-    ICommand <|-- DropCourseCommand
-    api_routes ..> ICommand : Instantiates & Executes
+    class JoinWaitlistCommand {
+        -StudentId studentId
+        -OfferingId offeringId
+        +execute() CommandResult
+    }
 
-    %% Business Tier - Observer
-    class NotificationPublisher {
-        -observers: List~INotificationObserver~
-        +subscribe(observer)
-        +publish(event)
-        +publishDrop(event)
+    class SubmitGradesCommand {
+        -OfferingId offeringId
+        -vector~GradeRecord~ records
+        +execute() CommandResult
+    }
+
+    class FinalizeGradesCommand {
+        -OfferingId offeringId
+        +execute() CommandResult
+    }
+
+    class SubmitCourseChangeRequestCommand {
+        -FacultyId facultyId
+        -OfferingId offeringId
+        -ChangeType type
+        +execute() CommandResult
+    }
+
+    class OverrideEnrollmentCommand {
+        -StudentId studentId
+        -OfferingId offeringId
+        -string reason
+        +execute() CommandResult
+    }
+
+    class ApproveCourseChangeCommand {
+        -ChangeRequestId requestId
+        +execute() CommandResult
+    }
+
+    class RejectCourseChangeCommand {
+        -ChangeRequestId requestId
+        +execute() CommandResult
+    }
+
+    class BrowseCourseCatalogueQuery {
+        +execute() CatalogueDto
+    }
+
+    class GetStudentScheduleQuery {
+        +execute() ScheduleDto
+    }
+
+    class GetClassRosterQuery {
+        +execute() RosterDto
+    }
+
+    class GetCapacityReportQuery {
+        +execute() CapacityReportDto
+    }
+
+    api_routes --> ICommand : Dispatches
+    api_routes --> BrowseCourseCatalogueQuery : Executes
+    api_routes --> GetStudentScheduleQuery : Executes
+    api_routes --> GetClassRosterQuery : Executes
+    api_routes --> GetCapacityReportQuery : Executes
+
+    EnrollStudentCommand ..|> ICommand
+    DropCourseCommand ..|> ICommand
+    JoinWaitlistCommand ..|> ICommand
+    SubmitGradesCommand ..|> ICommand
+    FinalizeGradesCommand ..|> ICommand
+    SubmitCourseChangeRequestCommand ..|> ICommand
+    OverrideEnrollmentCommand ..|> ICommand
+    ApproveCourseChangeCommand ..|> ICommand
+    RejectCourseChangeCommand ..|> ICommand
+```
+
+---
+
+## 2. Creational (Factory Method) & Behavioural (Observer) Design Patterns
+
+```mermaid
+classDiagram
+    class UserSession {
+        <<abstract>>
+        +userId() UserId
+        +role() UserRole
+    }
+
+    class StudentSession {
+        -StudentId studentId
+        +studentId() StudentId
+    }
+
+    class FacultySession {
+        -FacultyId facultyId
+        +facultyId() FacultyId
+    }
+
+    class AdministratorSession {
+        -AdminId adminId
+        +adminId() AdminId
+    }
+
+    class SessionCreator {
+        <<interface>>
+        +createSession(UserId, string) unique_ptr~UserSession~
+    }
+
+    class StudentSessionCreator {
+        +createSession(UserId, string) unique_ptr~UserSession~
+    }
+
+    class FacultySessionCreator {
+        +createSession(UserId, string) unique_ptr~UserSession~
+    }
+
+    class AdministratorSessionCreator {
+        +createSession(UserId, string) unique_ptr~UserSession~
     }
 
     class INotificationObserver {
         <<interface>>
-        +notify(event)
-        +notifyDrop(event)
+        +notify(CourseSeatAvailable)
+        +notifyDrop(CourseDropped)
     }
 
     class WaitlistNotificationObserver {
-        +notify(event)
-        +notifyDrop(event)
+        +notify(CourseSeatAvailable)
     }
 
-    NotificationPublisher o-- INotificationObserver : Manages
-    INotificationObserver <|-- WaitlistNotificationObserver
-    DropCourseCommand ..> NotificationPublisher : Calls publish()
-
-    %% Data Access Tier - Contracts
-    class IUserStore {
-        <<interface>>
-        +findUser(id) Result~User~
-        +findStudent(id) Result~Student~
+    class AdvisorNotificationObserver {
+        +notifyDrop(CourseDropped)
     }
 
-    class ICourseStore {
-        <<interface>>
-        +findCourse(id) Result~Course~
-        +findOffering(id) Result~CourseOffering~
+    class SystemAlertObserver {
+        +notify(CourseSeatAvailable)
     }
 
-    class IEnrollmentStore {
-        <<interface>>
-        +saveEnrollment(enrollment) Result~void~
-        +removeEnrollment(id) Result~void~
-    }
-    
-    class ITransactionBoundary {
-        <<interface>>
-        +executeTransaction(operation) Result~void~
+    class NotificationPublisher {
+        -vector~INotificationObserver*~ observers
+        +subscribe(INotificationObserver*)
+        +publish(CourseSeatAvailable)
+        +publishDrop(CourseDropped)
     }
 
-    %% Data Access Tier - Implementation
-    class MySqlDataContext {
-        -implementation: unique_ptr~Implementation~
-        +executeTransaction(operation)
-        +findUser(id)
-        +findCourse(id)
-        +saveEnrollment(enrollment)
-    }
+    StudentSession --|> UserSession
+    FacultySession --|> UserSession
+    AdministratorSession --|> UserSession
 
-    IUserStore <|.. MySqlDataContext
-    ICourseStore <|.. MySqlDataContext
-    IEnrollmentStore <|.. MySqlDataContext
-    ITransactionBoundary <|.. MySqlDataContext
-    
-    EnrollStudentCommand o-- IUserStore
-    EnrollStudentCommand o-- ICourseStore
-    EnrollStudentCommand o-- IEnrollmentStore
-    EnrollStudentCommand o-- ITransactionBoundary
+    StudentSessionCreator ..|> SessionCreator
+    FacultySessionCreator ..|> SessionCreator
+    AdministratorSessionCreator ..|> SessionCreator
 
-    %% Business Tier - Factory Method
-    class UserSession {
-        <<abstract>>
-        +userId()
-        +displayName()
-        +role()
-    }
-    
-    class StudentSession {
-        +studentId()
-    }
-    
-    class SessionCreator {
-        <<interface>>
-        +createSession(userId, name) unique_ptr~UserSession~
-    }
-    
-    class StudentSessionCreator {
-        +createSession(userId, name) unique_ptr~UserSession~
-    }
-    
-    UserSession <|-- StudentSession
-    SessionCreator <|-- StudentSessionCreator
     StudentSessionCreator ..> StudentSession : Instantiates
+    FacultySessionCreator ..> FacultySession : Instantiates
+    AdministratorSessionCreator ..> AdministratorSession : Instantiates
+
+    WaitlistNotificationObserver ..|> INotificationObserver
+    AdvisorNotificationObserver ..|> INotificationObserver
+    SystemAlertObserver ..|> INotificationObserver
+
+    NotificationPublisher --> INotificationObserver : Notifies Subscribers
+```
+
+---
+
+## 3. Data Access Tier Contracts, Facade & Pimpl Firewall
+
+```mermaid
+classDiagram
+    class IUserStore { <<interface>> +findUserById() }
+    class ICourseStore { <<interface>> +findCourseById() +findOfferingById() }
+    class IEnrollmentStore { <<interface>> +saveEnrollment() +removeEnrollment() }
+    class IGradeStore { <<interface>> +saveGrade() +finalizeGrades() }
+    class IProgramStore { <<interface>> +findProgramById() }
+    class IChangeRequestStore { <<interface>> +saveChangeRequest() }
+    class IWaitlistStore { <<interface>> +addWaitlistEntry() }
+    class ITransactionBoundary { <<interface>> +executeTransaction() }
+
+    class MySqlDataContext {
+        <<Facade>>
+        -unique_ptr~Implementation~ pimpl
+        +executeTransaction()
+        +findUserById()
+        +saveEnrollment()
+    }
+
+    class Implementation {
+        <<Pimpl Firewall>>
+        -MySqlPool connectionPool
+        +executeTransactionImpl()
+        +executeQueryImpl()
+    }
+
+    MySqlDataContext ..|> IUserStore
+    MySqlDataContext ..|> ICourseStore
+    MySqlDataContext ..|> IEnrollmentStore
+    MySqlDataContext ..|> IGradeStore
+    MySqlDataContext ..|> IProgramStore
+    MySqlDataContext ..|> IChangeRequestStore
+    MySqlDataContext ..|> IWaitlistStore
+    MySqlDataContext ..|> ITransactionBoundary
+
+    MySqlDataContext *-- Implementation : Owns Pimpl
+```
+
+---
+
+## 4. Domain Entities & Domain Model Relationships
+
+```mermaid
+classDiagram
+    class User {
+        +UserId id
+        +string email
+        +UserRole role
+        +UserStatus status
+    }
+
+    class Student {
+        +StudentId id
+        +UserId userId
+        +ProgramId programId
+        +int yearOfStudy
+    }
+
+    class Course {
+        +CourseId id
+        +string code
+        +string title
+        +int credits
+        +vector~CourseId~ prerequisiteIds
+    }
+
+    class CourseOffering {
+        +OfferingId id
+        +CourseId courseId
+        +FacultyId instructorId
+        +int capacity
+        +int enrolledCount
+        +ScheduleSchedule schedule
+    }
+
+    class Enrollment {
+        +EnrollmentId id
+        +StudentId studentId
+        +OfferingId offeringId
+        +EnrollmentStatus status
+    }
+
+    class GradeRecord {
+        +GradeId id
+        +EnrollmentId enrollmentId
+        +string gradeLetter
+        +GradeStatus status
+    }
+
+    class CourseChangeRequest {
+        +ChangeRequestId id
+        +OfferingId offeringId
+        +FacultyId requestedBy
+        +ChangeType type
+        +RequestStatus status
+    }
+
+    class WaitlistEntry {
+        +WaitlistId id
+        +OfferingId offeringId
+        +StudentId studentId
+        +int position
+    }
+
+    class EnrollmentOverride {
+        +OverrideId id
+        +StudentId studentId
+        +OfferingId offeringId
+        +AdminId overriddenBy
+        +string reason
+    }
+
+    Student "1" -- "1" User : Maps to
+    Student "1" -- "*" Enrollment : Possesses
+    CourseOffering "1" -- "*" Enrollment : Accepts
+    Enrollment "1" -- "0..1" GradeRecord : Yields
+    CourseOffering "1" -- "*" WaitlistEntry : Queues
+    CourseOffering "1" -- "*" CourseChangeRequest : Proposes
+    EnrollmentOverride "*" -- "1" Student : Applies to
 ```

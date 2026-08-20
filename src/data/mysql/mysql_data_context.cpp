@@ -534,6 +534,7 @@ thread_local const MySqlDataContext::Implementation*
 thread_local MySqlConnection* MySqlDataContext::Implementation::currentConnection_ = nullptr;
 thread_local bool MySqlDataContext::Implementation::transactionActive_ = false;
 
+// Facade pattern hiding multiple Repositories; Pimpl pattern encapsulating MySQL connections
 MySqlDataContext::MySqlDataContext(MySqlConfig config, size_t poolSize)
     : implementation_(make_unique<Implementation>(move(config), poolSize)) {}
 
