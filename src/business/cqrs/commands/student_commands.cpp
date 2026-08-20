@@ -60,6 +60,7 @@ EnrollStudentCommand::EnrollStudentCommand(
       transactionBoundary_(transactionBoundary) {}
 
 CommandResult EnrollStudentCommand::execute() {
+    // Begins the atomic enrolment transaction boundary using the Command Pattern
     return transactionBoundary_.executeTransaction([this] {
         auto student = validateActiveStudent(studentId_, userStore_);
         if (!student) {
@@ -112,6 +113,7 @@ CommandResult EnrollStudentCommand::execute() {
             }
         }
 
+        // Validates seat availability to enforce capacity rules
         if (offering.value()->enrolledCount >= offering.value()->capacity) {
             return CommandResult::failure(
                 "CAPACITY_FULL", "The requested course offering has no available seats.");
@@ -221,6 +223,7 @@ CommandResult DropCourseCommand::execute() {
         return CommandResult::success();
     });
 
+    // Uses the Observer Pattern to publish events after the transaction successfully commits
     if (result && opensCapacity && !waitingStudents.empty()) {
         notificationPublisher_.publish({offeringId_, move(waitingStudents)});
     }
