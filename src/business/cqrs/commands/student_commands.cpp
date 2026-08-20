@@ -224,6 +224,9 @@ CommandResult DropCourseCommand::execute() {
     if (result && opensCapacity && !waitingStudents.empty()) {
         notificationPublisher_.publish({offeringId_, move(waitingStudents)});
     }
+    if (result) {
+        notificationPublisher_.publishDrop({studentId_, offeringId_});
+    }
     return result;
 }
 
