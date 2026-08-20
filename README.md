@@ -28,33 +28,19 @@ that is consumed by the SPA and is reusable by any future mobile client.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        PRESENTATION TIER                        │
-│                                                                 │
-│   Vanilla JS SPA (frontend/)      Crow REST API (src/presentation/) │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │  JSON / DTOs
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      BUSINESS LOGIC TIER                        │
-│                                                                 │
-│   ┌──────────────────┐        ┌──────────────────┐             │
-│   │  CQRS – Queries  │        │  CQRS – Commands │             │
-│   │  (read-only)     │        │  (state-changing)│             │
-│   └──────────────────┘        └──────────────────┘             │
-│                                                                 │
-│   Domain rules · Sessions (Factory Method) · Observer          │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │  abstract data contracts
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       DATA ACCESS TIER                          │
-│                                                                 │
-│   InnoDB transactions · MySQL repositories · Schema/seed        │
-└─────────────────────────────────────────────────────────────────┘
-```
+### Tier 1: Presentation Tier
+- **Components**: Vanilla JS SPA (`frontend/`), Crow C++ REST API (`src/presentation/api/`)
+- **Communication**: JSON / DTOs flow downward to the Business Logic Tier.
 
+### Tier 2: Business Logic Tier
+- **Components**:
+  - **CQRS – Queries**: Read-only operations.
+  - **CQRS – Commands**: State-changing operations.
+- **Core Concerns**: Domain rules, Sessions (Factory Method), Observer
+- **Communication**: Interacts with the Data Access Tier through abstract data contracts.
+
+### Tier 3: Data Access Tier
+- **Components**: InnoDB transactions, MySQL repositories, Schema/seed data
 ### Design Patterns
 
 | Pattern | Category | Where applied |
@@ -189,7 +175,7 @@ Create a `.env` file in the repository root (it is git-ignored):
 NEXUSENROLL_DB_HOST=127.0.0.1
 NEXUSENROLL_DB_NAME=nexusenroll
 NEXUSENROLL_DB_USER=nexusenrolluser
-NEXUSENROLL_DB_PASSWORD=<your_password>
+NEXUSENROLL_DB_PASSWORD=password123
 NEXUSENROLL_DB_SOCKET=
 ```
 
@@ -199,27 +185,26 @@ connection; leave it empty to use TCP via `NEXUSENROLL_DB_HOST`.
 ### 3. Create the database and apply schema
 
 ```bash
-# Example using a root/admin account to create the schema
-mysql -u root -p < database/mysql/001_schema.sql
-mysql -u root -p < database/mysql/003_enrollment_overrides.sql
+mysql -u nexusenrolluser -p < database/mysql/001_schema.sql
+mysql -u nexusenrolluser -p < database/mysql/003_enrollment_overrides.sql
 ```
 
 Or, if you have set `MYSQL_ARGS` (e.g. `-u root -p`):
 
 ```bash
-make mysql-schema MYSQL_ARGS="-u root -p"
+make mysql-schema MYSQL_ARGS="-u nexusenrolluser -p"
 ```
 
 ### 4. Seed demonstration data
 
 ```bash
-mysql -u root -p < database/mysql/002_seed.sql
+mysql -u nexusenrolluser -p < database/mysql/002_seed.sql
 ```
 
 Or:
 
 ```bash
-make mysql-seed MYSQL_ARGS="-u root -p"
+make mysql-seed MYSQL_ARGS="-u nexusenrolluser -p"
 ```
 
 ---
