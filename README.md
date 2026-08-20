@@ -175,7 +175,7 @@ Create a `.env` file in the repository root (it is git-ignored):
 NEXUSENROLL_DB_HOST=127.0.0.1
 NEXUSENROLL_DB_NAME=nexusenroll
 NEXUSENROLL_DB_USER=nexusenrolluser
-NEXUSENROLL_DB_PASSWORD=<your_password>
+NEXUSENROLL_DB_PASSWORD=password123
 NEXUSENROLL_DB_SOCKET=
 ```
 
@@ -185,27 +185,26 @@ connection; leave it empty to use TCP via `NEXUSENROLL_DB_HOST`.
 ### 3. Create the database and apply schema
 
 ```bash
-# Example using a root/admin account to create the schema
-mysql -u root -p < database/mysql/001_schema.sql
-mysql -u root -p < database/mysql/003_enrollment_overrides.sql
+mysql -u nexusenrolluser -p < database/mysql/001_schema.sql
+mysql -u nexusenrolluser -p < database/mysql/003_enrollment_overrides.sql
 ```
 
 Or, if you have set `MYSQL_ARGS` (e.g. `-u root -p`):
 
 ```bash
-make mysql-schema MYSQL_ARGS="-u root -p"
+make mysql-schema MYSQL_ARGS="-u nexusenrolluser -p"
 ```
 
 ### 4. Seed demonstration data
 
 ```bash
-mysql -u root -p < database/mysql/002_seed.sql
+mysql -u nexusenrolluser -p < database/mysql/002_seed.sql
 ```
 
 Or:
 
 ```bash
-make mysql-seed MYSQL_ARGS="-u root -p"
+make mysql-seed MYSQL_ARGS="-u nexusenrolluser -p"
 ```
 
 ---
