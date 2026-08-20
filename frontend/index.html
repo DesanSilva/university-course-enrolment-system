@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusEnroll</title>
+    <meta name="description" content="University Course Enrolment System">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Icons (Material Symbols) -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <!-- App Styles -->
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div id="app-container">
+        <!-- Toast Notifications -->
+        <div id="toast-container"></div>
+
+        <!-- Login View -->
+        <section id="login-view" class="view active">
+            <div class="login-card glass-panel">
+                <div class="brand">
+                    <span class="material-symbols-outlined logo-icon">school</span>
+                    <h1>NexusEnroll</h1>
+                </div>
+                <p class="subtitle">University Course Enrolment System</p>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="userId">User ID</label>
+                        <input type="text" id="userId" name="userId" placeholder="Enter your ID (e.g., admin1, student1)" required autocomplete="off">
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="login-btn">
+                        <span>Sign In</span>
+                        <span class="material-symbols-outlined">arrow_forward</span>
+                    </button>
+                    <div id="login-error" class="error-text hidden"></div>
+                </form>
+            </div>
+            <div class="bg-decoration dec-1"></div>
+            <div class="bg-decoration dec-2"></div>
+        </section>
+
+        <!-- Authenticated Shell (Header + Sidebar + Content) -->
+        <section id="app-shell" class="view hidden">
+            <!-- Top Navigation -->
+            <header class="top-nav glass-panel">
+                <div class="brand">
+                    <span class="material-symbols-outlined logo-icon">school</span>
+                    <h2>NexusEnroll</h2>
+                </div>
+                <div class="user-menu">
+                    <div class="user-info">
+                        <span id="user-display-name" class="name">User</span>
+                        <span id="user-role-badge" class="badge">Role</span>
+                    </div>
+                    <button id="logout-btn" class="btn btn-icon btn-text" title="Logout">
+                        <span class="material-symbols-outlined">logout</span>
+                    </button>
+                </div>
+            </header>
+
+            <div class="main-layout">
+                <!-- Sidebar Navigation -->
+                <aside class="sidebar glass-panel" id="sidebar-nav">
+                    <!-- Nav items injected dynamically by app.js based on role -->
+                </aside>
+
+                <!-- Main Content Area -->
+                <main class="content-area" id="main-content">
+                    
+                    <!-- ========================================== -->
+                    <!-- STUDENT VIEWS                              -->
+                    <!-- ========================================== -->
+                    
+                    <!-- Student Dashboard -->
+                    <div id="student-dashboard" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>Dashboard</h2>
+                            <p>Welcome back! Here's an overview of your studies.</p>
+                        </header>
+                        <div class="dashboard-grid">
+                            <div class="stat-card glass-panel">
+                                <span class="material-symbols-outlined stat-icon">book</span>
+                                <div class="stat-details">
+                                    <h3 id="stat-enrolled">0</h3>
+                                    <p>Active Enrolments</p>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel">
+                                <span class="material-symbols-outlined stat-icon">hourglass_empty</span>
+                                <div class="stat-details">
+                                    <h3 id="stat-waitlisted">0</h3>
+                                    <p>Waitlisted Courses</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Catalogue View -->
+                    <div id="student-catalogue" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>Course Catalogue</h2>
+                            <p>Browse and enroll in available courses.</p>
+                        </header>
+                        <div class="filters glass-panel">
+                            <input type="text" id="cat-search" placeholder="Search by course code or name..." class="filter-input">
+                            <select id="cat-semester" class="filter-select">
+                                <option value="Fall 2024">Fall 2024</option>
+                                <option value="Spring 2025">Spring 2025</option>
+                            </select>
+                            <button id="btn-search-cat" class="btn btn-secondary">Search</button>
+                        </div>
+                        <div id="catalogue-list" class="data-grid">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Schedule View -->
+                    <div id="student-schedule" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>My Schedule</h2>
+                            <p>Your current course enrollments.</p>
+                        </header>
+                        <div class="filters glass-panel">
+                            <select id="sched-semester" class="filter-select">
+                                <option value="Fall 2024">Fall 2024</option>
+                                <option value="Spring 2025">Spring 2025</option>
+                            </select>
+                            <button id="btn-load-sched" class="btn btn-secondary">Load</button>
+                        </div>
+                        <div id="schedule-list" class="cards-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Progress View -->
+                    <div id="student-progress" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>Academic Progress</h2>
+                            <p>Track your degree requirements.</p>
+                        </header>
+                        <div class="progress-container glass-panel">
+                            <div id="program-info" class="program-header">
+                                <!-- Populated by JS -->
+                            </div>
+                            <div class="progress-sections">
+                                <div class="progress-section">
+                                    <h3>Completed Courses</h3>
+                                    <table class="data-table" id="completed-courses-table">
+                                        <thead><tr><th>Code</th><th>Name</th><th>Credits</th><th>Grade</th></tr></thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                                <div class="progress-section">
+                                    <h3>Remaining Requirements</h3>
+                                    <ul id="remaining-reqs-list" class="req-list"></ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Waitlist View -->
+                    <div id="student-waitlist" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>My Waitlist</h2>
+                            <p>Courses you are currently waiting for.</p>
+                        </header>
+                        <div id="waitlist-list" class="cards-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- FACULTY VIEWS                              -->
+                    <!-- ========================================== -->
+                    <div id="faculty-offerings" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>My Offerings</h2>
+                            <p>Courses you are teaching.</p>
+                        </header>
+                        <!-- To be built dynamically by JS -->
+                        <div id="faculty-offerings-list" class="cards-list"></div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ADMIN VIEWS                                -->
+                    <!-- ========================================== -->
+                    <div id="admin-dashboard" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>Administrator Dashboard</h2>
+                            <p>System overview and reporting.</p>
+                        </header>
+                        <!-- Add admin features later if needed, keep simple for now -->
+                        <div class="glass-panel" style="padding: 2rem;">
+                            <h3>Welcome Admin</h3>
+                            <p>Use the sidebar to navigate to Courses, Programs, and Users management.</p>
+                        </div>
+                    </div>
+                    
+                </main>
+            </div>
+        </section>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/app.js"></script>
+</body>
+</html>
