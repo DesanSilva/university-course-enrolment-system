@@ -179,10 +179,78 @@
                     <div id="faculty-offerings" class="sub-view hidden">
                         <header class="view-header">
                             <h2>My Offerings</h2>
-                            <p>Courses you are teaching.</p>
+                            <p>Courses you are teaching and managing.</p>
                         </header>
-                        <!-- To be built dynamically by JS -->
-                        <div id="faculty-offerings-list" class="cards-list"></div>
+                        <div id="faculty-offerings-list" class="data-grid">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <div id="faculty-roster" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>Course Roster</h2>
+                            <p id="roster-course-info">Loading...</p>
+                            <button class="btn btn-secondary btn-sm" onclick="handleRoute('offerings')"><span class="material-symbols-outlined">arrow_back</span> Back</button>
+                        </header>
+                        <div class="glass-panel" style="padding: 1.5rem;">
+                            <table class="data-table" id="roster-table">
+                                <thead><tr><th>Student ID</th><th>Name</th><th>Email</th><th>Status</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="faculty-grades" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>Manage Grades</h2>
+                            <p id="grades-course-info">Loading...</p>
+                            <button class="btn btn-secondary btn-sm" onclick="handleRoute('offerings')"><span class="material-symbols-outlined">arrow_back</span> Back</button>
+                        </header>
+                        <div class="glass-panel" style="padding: 1.5rem;">
+                            <form id="grade-submit-form">
+                                <table class="data-table" id="grades-table">
+                                    <thead><tr><th>Student ID</th><th>Name</th><th>Current Grade</th><th>Assign Grade</th></tr></thead>
+                                    <tbody></tbody>
+                                </table>
+                                <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end;">
+                                    <button type="submit" class="btn btn-primary">Submit Grades</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div id="faculty-requests" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>Change Requests</h2>
+                            <p>Request capacity changes for your courses.</p>
+                        </header>
+                        <div class="glass-panel" style="padding: 1.5rem; margin-bottom: 2rem;">
+                            <form id="faculty-request-form" style="display: flex; gap: 1rem; align-items: flex-end;">
+                                <div style="flex:1;">
+                                    <label>Course ID</label>
+                                    <input type="text" id="req-course" placeholder="e.g. COURSE-CS101" required class="search-input" style="width:100%; margin-top:0.5rem;">
+                                </div>
+                                <div style="flex:1;">
+                                    <label>Type</label>
+                                    <select id="req-type" class="filter-select" style="width:100%; margin-top:0.5rem;">
+                                        <option value="CAPACITY">CAPACITY</option>
+                                    </select>
+                                </div>
+                                <div style="flex:1;">
+                                    <label>New Value</label>
+                                    <input type="number" id="req-value" placeholder="e.g. 50" required class="search-input" style="width:100%; margin-top:0.5rem;">
+                                </div>
+                                <div>
+                                    <button type="submit" class="btn btn-primary">Submit Request</button>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="glass-panel" style="padding: 1.5rem;">
+                            <table class="data-table" id="faculty-requests-table">
+                                <thead><tr><th>Request ID</th><th>Course ID</th><th>Type</th><th>Value</th><th>Status</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
                     </div>
 
                     <!-- ========================================== -->
@@ -191,12 +259,89 @@
                     <div id="admin-dashboard" class="sub-view hidden">
                         <header class="view-header">
                             <h2>Administrator Dashboard</h2>
-                            <p>System overview and reporting.</p>
+                            <p>System overview and quick actions.</p>
                         </header>
-                        <!-- Add admin features later if needed, keep simple for now -->
-                        <div class="glass-panel" style="padding: 2rem;">
-                            <h3>Welcome Admin</h3>
-                            <p>Use the sidebar to navigate to Courses, Programs, and Users management.</p>
+                        <div class="dashboard-grid">
+                            <div class="stat-card glass-panel" onclick="handleRoute('admin-users')" style="cursor:pointer;">
+                                <span class="material-symbols-outlined stat-icon">group</span>
+                                <div class="stat-details">
+                                    <h3>Users</h3>
+                                    <p>Manage Accounts</p>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel" onclick="handleRoute('admin-courses')" style="cursor:pointer;">
+                                <span class="material-symbols-outlined stat-icon">library_books</span>
+                                <div class="stat-details">
+                                    <h3>Courses</h3>
+                                    <p>Manage Curriculum</p>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel" onclick="handleRoute('admin-reports')" style="cursor:pointer;">
+                                <span class="material-symbols-outlined stat-icon">bar_chart</span>
+                                <div class="stat-details">
+                                    <h3>Reports</h3>
+                                    <p>System Analytics</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="admin-users" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>User Management</h2>
+                            <p>View and manage all system users.</p>
+                        </header>
+                        <div class="glass-panel" style="padding: 1.5rem;">
+                            <table class="data-table" id="admin-users-table">
+                                <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="admin-courses" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>Course Management</h2>
+                            <p>View all courses in the system.</p>
+                        </header>
+                        <div class="glass-panel" style="padding: 1.5rem;">
+                            <table class="data-table" id="admin-courses-table">
+                                <thead><tr><th>Code</th><th>Name</th><th>Department</th><th>Credits</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="admin-requests" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>Change Requests Inbox</h2>
+                            <p>Review and approve faculty requests.</p>
+                        </header>
+                        <div class="glass-panel" style="padding: 1.5rem;">
+                            <table class="data-table" id="admin-requests-table">
+                                <thead><tr><th>Faculty ID</th><th>Course ID</th><th>Type</th><th>Value</th><th>Status</th><th>Actions</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="admin-reports" class="sub-view hidden">
+                        <header class="view-header">
+                            <h2>System Reports</h2>
+                            <p>Analytics and enrollment data.</p>
+                        </header>
+                        <div class="filters glass-panel">
+                            <select id="report-type" class="filter-select">
+                                <option value="enrolment">Enrolment Summary</option>
+                                <option value="course-popularity">Course Popularity</option>
+                                <option value="capacity">Capacity Issues</option>
+                            </select>
+                            <button id="btn-load-report" class="btn btn-secondary">Load Report</button>
+                        </div>
+                        <div class="glass-panel" style="padding: 1.5rem;">
+                            <div id="report-content">
+                                <p style="color: var(--text-muted);">Select a report and click Load.</p>
+                            </div>
                         </div>
                     </div>
                     
