@@ -20,72 +20,126 @@ classDiagram
     }
 
     class EnrollStudentCommand {
-        -StudentId studentId
-        -OfferingId offeringId
+        -StudentId studentId_
+        -OfferingId offeringId_
+        -IUserStore userStore_
+        -ICourseStore courseStore_
+        -IEnrollmentStore enrollmentStore_
+        -IGradeStore gradeStore_
+        -IWaitlistStore waitlistStore_
+        -ITransactionBoundary transactionBoundary_
         +execute() CommandResult
     }
 
     class DropCourseCommand {
-        -StudentId studentId
-        -OfferingId offeringId
+        -StudentId studentId_
+        -OfferingId offeringId_
+        -IUserStore userStore_
+        -ICourseStore courseStore_
+        -IEnrollmentStore enrollmentStore_
+        -IWaitlistStore waitlistStore_
+        -ITransactionBoundary transactionBoundary_
+        -NotificationPublisher notificationPublisher_
         +execute() CommandResult
     }
 
     class JoinWaitlistCommand {
-        -StudentId studentId
-        -OfferingId offeringId
+        -StudentId studentId_
+        -OfferingId offeringId_
+        -IUserStore userStore_
+        -ICourseStore courseStore_
+        -IEnrollmentStore enrollmentStore_
+        -IWaitlistStore waitlistStore_
+        -ITransactionBoundary transactionBoundary_
         +execute() CommandResult
     }
 
     class SubmitGradesCommand {
-        -OfferingId offeringId
-        -vector~GradeRecord~ records
+        -FacultyId facultyId_
+        -OfferingId offeringId_
+        -vector~GradeInput~ grades_
+        -IUserStore userStore_
+        -ICourseStore courseStore_
+        -IEnrollmentStore enrollmentStore_
+        -IGradeStore gradeStore_
+        -ITransactionBoundary transactionBoundary_
         +execute() CommandResult
+        +outcome() GradeBatchOutcome
     }
 
     class FinalizeGradesCommand {
-        -OfferingId offeringId
+        -FacultyId facultyId_
+        -OfferingId offeringId_
+        -IUserStore userStore_
+        -ICourseStore courseStore_
+        -IEnrollmentStore enrollmentStore_
+        -IGradeStore gradeStore_
+        -ITransactionBoundary transactionBoundary_
         +execute() CommandResult
+        +finalizedCount() size_t
     }
 
     class SubmitCourseChangeRequestCommand {
-        -FacultyId facultyId
-        -OfferingId offeringId
-        -ChangeType type
+        -FacultyId facultyId_
+        -CourseChangeInput input_
+        -IUserStore userStore_
+        -ICourseStore courseStore_
+        -IChangeRequestStore changeRequestStore_
         +execute() CommandResult
+        +requestId() ChangeRequestId
     }
 
     class OverrideEnrollmentCommand {
-        -StudentId studentId
-        -OfferingId offeringId
-        -string reason
+        -EnrollmentOverrideInput input_
+        -IUserStore userStore_
+        -ICourseStore courseStore_
+        -IEnrollmentStore enrollmentStore_
+        -IGradeStore gradeStore_
+        -IWaitlistStore waitlistStore_
+        -ITransactionBoundary transactionBoundary_
         +execute() CommandResult
+        +enrollmentId() EnrollmentId
+        +overrideId() EnrollmentOverrideId
     }
 
     class ApproveCourseChangeCommand {
-        -ChangeRequestId requestId
+        -ChangeRequestId requestId_
+        -ICourseStore courseStore_
+        -IChangeRequestStore changeRequestStore_
+        -ITransactionBoundary transactionBoundary_
         +execute() CommandResult
     }
 
     class RejectCourseChangeCommand {
-        -ChangeRequestId requestId
+        -ChangeRequestId requestId_
+        -IChangeRequestStore changeRequestStore_
+        -ITransactionBoundary transactionBoundary_
         +execute() CommandResult
     }
 
+    class CreateCourseCommand { +execute() CommandResult }
+    class UpdateCourseCommand { +execute() CommandResult }
+    class DeleteCourseCommand { +execute() CommandResult }
+    class CreateProgramCommand { +execute() CommandResult }
+    class UpdateProgramCommand { +execute() CommandResult }
+    class CreateAccountCommand { +execute() CommandResult }
+    class EditAccountCommand { +execute() CommandResult }
+    class DeactivateUserCommand { +execute() CommandResult }
+
     class BrowseCourseCatalogueQuery {
-        +execute() CatalogueDto
+        +execute() vector~CatalogueItem~
     }
 
     class GetStudentScheduleQuery {
-        +execute() ScheduleDto
+        +execute() vector~Enrollment~
     }
 
     class GetClassRosterQuery {
-        +execute() RosterDto
+        +execute() vector~FacultyRosterEntry~
     }
 
     class GetCapacityReportQuery {
-        +execute() CapacityReportDto
+        +execute() vector~CapacityReportItem~
     }
 
     api_routes --> ICommand : Dispatches
@@ -103,6 +157,14 @@ classDiagram
     OverrideEnrollmentCommand ..|> ICommand
     ApproveCourseChangeCommand ..|> ICommand
     RejectCourseChangeCommand ..|> ICommand
+    CreateCourseCommand ..|> ICommand
+    UpdateCourseCommand ..|> ICommand
+    DeleteCourseCommand ..|> ICommand
+    CreateProgramCommand ..|> ICommand
+    UpdateProgramCommand ..|> ICommand
+    CreateAccountCommand ..|> ICommand
+    EditAccountCommand ..|> ICommand
+    DeactivateUserCommand ..|> ICommand
 ```
 
 ---
@@ -113,23 +175,25 @@ classDiagram
 classDiagram
     class UserSession {
         <<abstract>>
+        -UserId userId_
+        -string displayName_
+        -UserRole role_
         +userId() UserId
+        +displayName() string
         +role() UserRole
     }
 
     class StudentSession {
-        -StudentId studentId
+        -StudentId studentId_
         +studentId() StudentId
     }
 
     class FacultySession {
-        -FacultyId facultyId
+        -FacultyId facultyId_
         +facultyId() FacultyId
     }
 
     class AdministratorSession {
-        -AdminId adminId
-        +adminId() AdminId
     }
 
     class SessionCreator {
@@ -138,10 +202,12 @@ classDiagram
     }
 
     class StudentSessionCreator {
+        -StudentId studentId_
         +createSession(UserId, string) unique_ptr~UserSession~
     }
 
     class FacultySessionCreator {
+        -FacultyId facultyId_
         +createSession(UserId, string) unique_ptr~UserSession~
     }
 
@@ -149,29 +215,44 @@ classDiagram
         +createSession(UserId, string) unique_ptr~UserSession~
     }
 
+    class DemonstrationSessionService {
+        -IUserStore userStore_
+        +create(UserId) Result~unique_ptr~UserSession~~
+    }
+
     class INotificationObserver {
         <<interface>>
-        +notify(CourseSeatAvailable)
-        +notifyDrop(CourseDropped)
+        +notify(CourseSeatAvailable) void
+        +notifyDrop(CourseDropped) void
     }
 
     class WaitlistNotificationObserver {
-        +notify(CourseSeatAvailable)
+        -NotificationLog* log_
+        +notify(CourseSeatAvailable) void
+        +notifications() vector~CourseSeatAvailable~
     }
 
     class AdvisorNotificationObserver {
-        +notifyDrop(CourseDropped)
+        -NotificationLog log_
+        +notifyDrop(CourseDropped) void
     }
 
     class SystemAlertObserver {
-        +notify(CourseSeatAvailable)
+        -NotificationLog log_
+        +recordAlert(string) void
     }
 
     class NotificationPublisher {
-        -vector~INotificationObserver*~ observers
-        +subscribe(INotificationObserver*)
-        +publish(CourseSeatAvailable)
-        +publishDrop(CourseDropped)
+        -vector~shared_ptr~INotificationObserver~~ observers_
+        +subscribe(shared_ptr~INotificationObserver~)
+        +publish(CourseSeatAvailable) void
+        +publishDrop(CourseDropped) void
+    }
+
+    class NotificationLog {
+        -vector~NotificationAlert~ entries_
+        +append(string, string) void
+        +all() vector~NotificationAlert~
     }
 
     StudentSession --|> UserSession
@@ -182,15 +263,20 @@ classDiagram
     FacultySessionCreator ..|> SessionCreator
     AdministratorSessionCreator ..|> SessionCreator
 
-    StudentSessionCreator ..> StudentSession : Instantiates
-    FacultySessionCreator ..> FacultySession : Instantiates
-    AdministratorSessionCreator ..> AdministratorSession : Instantiates
+    StudentSessionCreator ..> StudentSession : creates
+    FacultySessionCreator ..> FacultySession : creates
+    AdministratorSessionCreator ..> AdministratorSession : creates
+
+    DemonstrationSessionService ..> SessionCreator : uses
 
     WaitlistNotificationObserver ..|> INotificationObserver
     AdvisorNotificationObserver ..|> INotificationObserver
     SystemAlertObserver ..|> INotificationObserver
 
-    NotificationPublisher --> INotificationObserver : Notifies Subscribers
+    NotificationPublisher --> INotificationObserver : notifies subscribers
+    WaitlistNotificationObserver --> NotificationLog : writes to
+    AdvisorNotificationObserver --> NotificationLog : writes to
+    SystemAlertObserver --> NotificationLog : writes to
 ```
 
 ---
@@ -199,28 +285,24 @@ classDiagram
 
 ```mermaid
 classDiagram
-    class IUserStore { <<interface>> +findUserById() }
-    class ICourseStore { <<interface>> +findCourseById() +findOfferingById() }
-    class IEnrollmentStore { <<interface>> +saveEnrollment() +removeEnrollment() }
-    class IGradeStore { <<interface>> +saveGrade() +finalizeGrades() }
-    class IProgramStore { <<interface>> +findProgramById() }
-    class IChangeRequestStore { <<interface>> +saveChangeRequest() }
-    class IWaitlistStore { <<interface>> +addWaitlistEntry() }
-    class ITransactionBoundary { <<interface>> +executeTransaction() }
+    class IUserStore { <<interface>> +findUser() +findStudent() +findFaculty() +saveUser() +createUser() }
+    class ICourseStore { <<interface>> +findCourse() +findOffering() +browseCatalogue() +saveCourse() +saveOffering() }
+    class IEnrollmentStore { <<interface>> +saveEnrollment() +removeEnrollment() +findStudentEnrollment() +createEnrollmentOverride() }
+    class IGradeStore { <<interface>> +createGradeRecord() +saveGradeRecord() +pendingGradesForOffering() +submittedGradesForStudent() }
+    class IProgramStore { <<interface>> +findProgram() +createProgram() +saveProgram() }
+    class IChangeRequestStore { <<interface>> +createChangeRequest() +saveChangeRequest() +changeRequestsForFaculty() }
+    class IWaitlistStore { <<interface>> +saveWaitlistEntry() +removeWaitlistEntry() +nextWaitlistPosition() +waitingEntriesForOffering() }
+    class ITransactionBoundary { <<interface>> +executeTransaction(Operation) }
 
     class MySqlDataContext {
         <<Facade>>
-        -unique_ptr~Implementation~ pimpl
-        +executeTransaction()
-        +findUserById()
-        +saveEnrollment()
+        -unique_ptr~Implementation~ implementation_
+        +verifyConnections()
     }
 
     class Implementation {
         <<Pimpl Firewall>>
         -MySqlPool connectionPool
-        +executeTransactionImpl()
-        +executeQueryImpl()
     }
 
     MySqlDataContext ..|> IUserStore
@@ -232,7 +314,7 @@ classDiagram
     MySqlDataContext ..|> IWaitlistStore
     MySqlDataContext ..|> ITransactionBoundary
 
-    MySqlDataContext *-- Implementation : Owns Pimpl
+    MySqlDataContext *-- Implementation : owns (Pimpl)
 ```
 
 ---
@@ -243,33 +325,43 @@ classDiagram
 classDiagram
     class User {
         +UserId id
+        +string name
         +string email
-        +UserRole role
         +UserStatus status
+        +UserRole role
     }
 
     class Student {
         +StudentId id
         +UserId userId
         +ProgramId programId
-        +int yearOfStudy
+    }
+
+    class Faculty {
+        +FacultyId id
+        +UserId userId
+        +string department
     }
 
     class Course {
         +CourseId id
         +string code
-        +string title
-        +int credits
-        +vector~CourseId~ prerequisiteIds
+        +string department
+        +string courseNumber
+        +string name
+        +string description
+        +unsigned int credits
+        +vector~CourseId~ prerequisiteCourseIds
     }
 
     class CourseOffering {
         +OfferingId id
         +CourseId courseId
+        +string semester
         +FacultyId instructorId
-        +int capacity
-        +int enrolledCount
-        +ScheduleSchedule schedule
+        +size_t capacity
+        +size_t enrolledCount
+        +vector~ScheduleSlot~ schedule
     }
 
     class Enrollment {
@@ -279,41 +371,59 @@ classDiagram
         +EnrollmentStatus status
     }
 
+    class DegreeProgram {
+        +ProgramId id
+        +string name
+        +string department
+        +vector~CourseId~ requiredCourseIds
+        +unsigned int requiredCredits
+    }
+
     class GradeRecord {
-        +GradeId id
-        +EnrollmentId enrollmentId
-        +string gradeLetter
-        +GradeStatus status
+        +GradeRecordId id
+        +StudentId studentId
+        +OfferingId offeringId
+        +CourseId courseId
+        +string grade
+        +GradeLifecycle lifecycle
     }
 
     class CourseChangeRequest {
         +ChangeRequestId id
-        +OfferingId offeringId
-        +FacultyId requestedBy
-        +ChangeType type
-        +RequestStatus status
+        +FacultyId facultyId
+        +CourseId courseId
+        +optional~OfferingId~ offeringId
+        +CourseChangeType type
+        +CourseChangeStatus status
+        +string requestedValue
     }
 
     class WaitlistEntry {
-        +WaitlistId id
-        +OfferingId offeringId
+        +WaitlistEntryId id
         +StudentId studentId
-        +int position
+        +OfferingId offeringId
+        +size_t position
+        +WaitlistStatus status
     }
 
     class EnrollmentOverride {
-        +OverrideId id
-        +StudentId studentId
-        +OfferingId offeringId
-        +AdminId overriddenBy
+        +EnrollmentOverrideId id
+        +UserId administratorUserId
+        +EnrollmentId enrollmentId
+        +EnrollmentRule bypassedRule
         +string reason
     }
 
-    Student "1" -- "1" User : Maps to
-    Student "1" -- "*" Enrollment : Possesses
-    CourseOffering "1" -- "*" Enrollment : Accepts
-    Enrollment "1" -- "0..1" GradeRecord : Yields
-    CourseOffering "1" -- "*" WaitlistEntry : Queues
-    CourseOffering "1" -- "*" CourseChangeRequest : Proposes
-    EnrollmentOverride "*" -- "1" Student : Applies to
+    Student "1" -- "1" User : maps to
+    Faculty "1" -- "1" User : maps to
+    Student "1" -- "1" DegreeProgram : enrolled in
+    Student "1" -- "*" Enrollment : possesses
+    CourseOffering "1" -- "*" Enrollment : accepts
+    CourseOffering "1" -- "1" Course : instance of
+    GradeRecord "*" -- "1" Student : belongs to
+    GradeRecord "*" -- "1" CourseOffering : for
+    CourseOffering "1" -- "*" WaitlistEntry : queues
+    CourseChangeRequest "*" -- "1" Faculty : proposed by
+    CourseChangeRequest "*" -- "1" Course : targets
+    EnrollmentOverride "*" -- "1" Enrollment : overrides
 ```

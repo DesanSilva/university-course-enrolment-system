@@ -11,14 +11,21 @@ stateDiagram-v2
     FetchOffering --> CheckEnrollmentExists : Offering Found
     FetchOffering --> [*] : Offering Not Found (Error)
     
-    CheckEnrollmentExists --> CheckPrerequisites : Not Enrolled
-    CheckEnrollmentExists --> [*] : Already Enrolled (Error)
+    CheckEnrollmentExists --> FetchCourse : Not Enrolled / Not Completed
+    CheckEnrollmentExists --> [*] : Already Enrolled / Completed (Error)
+    
+    FetchCourse --> FetchStudentGrades : Course Found
+    FetchCourse --> [*] : Course Not Found (Error)
+    
+    FetchStudentGrades --> CheckPrerequisites : Grades Fetched
     
     CheckPrerequisites --> CheckCapacity : Prerequisites Met
     CheckPrerequisites --> [*] : Missing Prerequisites (Error)
     
-    CheckCapacity --> CheckTimeConflict : Seats Available
+    CheckCapacity --> FetchActiveEnrollments : Seats Available
     CheckCapacity --> [*] : Full (Error)
+    
+    FetchActiveEnrollments --> CheckTimeConflict : Enrollments Fetched
     
     CheckTimeConflict --> CheckWaitlistEntry : No Conflict
     CheckTimeConflict --> [*] : Time Conflict (Error)
