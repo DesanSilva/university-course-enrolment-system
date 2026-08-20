@@ -1,6 +1,7 @@
 // State
 let currentUser = null; // { userId, displayName, role, profileId }
 let currentOfferingId = null; // Used for passing state between Faculty views
+let lastNotifCount = 0; // Tracks seen notification count for badge
 
 // DOM Elements
 const loginView = document.getElementById('login-view');
@@ -63,8 +64,7 @@ window.showToast = (message, type = 'info') => {
     if (!container) return;
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    const icon = type === 'success' ? 'check_circle' : (type === 'error' ? 'error' : 'info');
-    toast.innerHTML = `<span class="material-symbols-outlined">${icon}</span> <span>${message}</span>`;
+    toast.innerHTML = `<span>${message}</span>`;
     container.appendChild(toast);
     setTimeout(() => {
         toast.style.opacity = '0';
@@ -109,6 +109,23 @@ function init() {
         showLogin();
     });
 
+    // Notifications bell
+    const notifBtn   = document.getElementById('notifications-btn');
+    const notifPanel = document.getElementById('notifications-panel');
+    const notifClose = document.getElementById('notif-close-btn');
+    notifBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        notifPanel.classList.toggle('hidden');
+        document.getElementById('notif-badge').classList.add('hidden');
+        lastNotifCount = document.getElementById('notifications-list').children.length || lastNotifCount;
+    });
+    notifClose?.addEventListener('click', () => notifPanel.classList.add('hidden'));
+    document.addEventListener('click', (e) => {
+        if (notifPanel && !notifPanel.contains(e.target) && e.target !== notifBtn) {
+            notifPanel.classList.add('hidden');
+        }
+    });
+
     window.addEventListener('hashchange', handleRoute);
 }
 
@@ -129,8 +146,8 @@ function showAppShell() {
     document.getElementById('user-role-badge').textContent = currentUser.role;
     
     renderSidebar();
+    startNotificationPolling();
     
-    // Default routing
     let targetHash = window.location.hash.substring(1);
     if (!targetHash) {
         targetHash = currentUser.role === 'ADMINISTRATOR' ? 'admin-dashboard' : 'dashboard';
@@ -141,28 +158,69 @@ function showAppShell() {
     }
 }
 
+// --- Notification Polling ---
+let notifPollInterval = null;
+
+function startNotificationPolling() {
+    if (notifPollInterval) clearInterval(notifPollInterval);
+    pollNotifications();
+    notifPollInterval = setInterval(pollNotifications, 10000);
+}
+
+async function pollNotifications() {
+    try {
+        const res  = await fetch('/api/v1/notifications');
+        const json = await res.json();
+        if (!json.ok) return;
+        const alerts = json.data?.items ?? [];
+        const list   = document.getElementById('notifications-list');
+        if (!list) return;
+
+        list.innerHTML = alerts.length
+            ? alerts.slice().reverse().map(a => `
+                <li class="notif-item">
+                    <span class="notif-type">${a.type}</span>
+                    <p>${a.message}</p>
+                    <small style="color:var(--color-muted);">${new Date(a.timestampMs).toLocaleTimeString()}</small>
+                </li>`).join('')
+            : '<li class="notif-item" style="color:var(--color-muted);">No notifications yet.</li>';
+
+        if (alerts.length > lastNotifCount) {
+            const newAlerts = alerts.slice(lastNotifCount);
+            newAlerts.forEach(a => showToast(a.message, a.type === 'SYSTEM' ? 'error' : 'info'));
+            const badge = document.getElementById('notif-badge');
+            if (badge) {
+                badge.textContent = alerts.length - lastNotifCount;
+                badge.classList.remove('hidden');
+            }
+        }
+        lastNotifCount = alerts.length;
+    } catch (_) {
+        // Polling failures are silent
+    }
+}
+
 // --- Navigation & Routing ---
 const navConfig = {
     STUDENT: [
-        { id: 'dashboard', icon: 'dashboard', text: 'Dashboard', view: 'student-dashboard' },
-        { id: 'catalogue', icon: 'auto_stories', text: 'Catalogue', view: 'student-catalogue' },
-        { id: 'schedule', icon: 'calendar_month', text: 'Schedule', view: 'student-schedule' },
-        { id: 'progress', icon: 'school', text: 'Progress', view: 'student-progress' },
-        { id: 'waitlist', icon: 'hourglass_empty', text: 'Waitlist', view: 'student-waitlist' }
+        { id: 'dashboard', text: 'Dashboard', view: 'student-dashboard' },
+        { id: 'catalogue', text: 'Catalogue', view: 'student-catalogue' },
+        { id: 'schedule', text: 'Schedule', view: 'student-schedule' },
+        { id: 'progress', text: 'Progress', view: 'student-progress' },
+        { id: 'waitlist', text: 'Waitlist', view: 'student-waitlist' }
     ],
     FACULTY: [
-        { id: 'offerings', icon: 'menu_book', text: 'My Offerings', view: 'faculty-offerings' },
-        { id: 'faculty-requests', icon: 'edit_note', text: 'Change Requests', view: 'faculty-requests' },
-        // Hidden views: roster, grades (accessed via buttons)
+        { id: 'offerings', text: 'My Offerings', view: 'faculty-offerings' },
+        { id: 'faculty-requests', text: 'Change Requests', view: 'faculty-requests' },
         { id: 'roster', view: 'faculty-roster', hidden: true },
         { id: 'grades', view: 'faculty-grades', hidden: true }
     ],
     ADMINISTRATOR: [
-        { id: 'admin-dashboard', icon: 'dashboard', text: 'Dashboard', view: 'admin-dashboard' },
-        { id: 'admin-users', icon: 'group', text: 'Users', view: 'admin-users' },
-        { id: 'admin-courses', icon: 'library_books', text: 'Courses', view: 'admin-courses' },
-        { id: 'admin-requests', icon: 'inbox', text: 'Requests', view: 'admin-requests' },
-        { id: 'admin-reports', icon: 'bar_chart', text: 'Reports', view: 'admin-reports' }
+        { id: 'admin-dashboard', text: 'Dashboard', view: 'admin-dashboard' },
+        { id: 'admin-users', text: 'Users', view: 'admin-users' },
+        { id: 'admin-courses', text: 'Courses', view: 'admin-courses' },
+        { id: 'admin-requests', text: 'Requests', view: 'admin-requests' },
+        { id: 'admin-reports', text: 'Reports', view: 'admin-reports' }
     ]
 };
 
@@ -170,7 +228,6 @@ function renderSidebar() {
     const items = navConfig[currentUser.role] || [];
     sidebarNav.innerHTML = items.filter(i => !i.hidden).map(item => `
         <a href="#${item.id}" class="nav-item" data-id="${item.id}">
-            <span class="material-symbols-outlined">${item.icon}</span>
             <span>${item.text}</span>
         </a>
     `).join('');
@@ -180,7 +237,7 @@ window.handleRoute = (overrideHash = null) => {
     if (!currentUser) return;
     if (typeof overrideHash === 'string') {
         window.location.hash = `#${overrideHash}`;
-        return; // Event listener will catch this and run again
+        return;
     }
     
     const hash = window.location.hash.substring(1);
@@ -188,19 +245,16 @@ window.handleRoute = (overrideHash = null) => {
     const route = items.find(i => i.id === hash) || items[0];
     if (!route) return;
     
-    // Update active nav (ignore hidden sub-routes)
     document.querySelectorAll('.nav-item').forEach(el => {
         el.classList.toggle('active', el.dataset.id === route.id || 
             (route.id === 'roster' && el.dataset.id === 'offerings') ||
             (route.id === 'grades' && el.dataset.id === 'offerings'));
     });
     
-    // Hide all views, show active
     document.querySelectorAll('.sub-view').forEach(el => el.classList.add('hidden'));
     const viewEl = document.getElementById(route.view);
     if (viewEl) viewEl.classList.remove('hidden');
     
-    // Load view data
     loadViewData(route.id);
 };
 
@@ -208,10 +262,9 @@ window.handleRoute = (overrideHash = null) => {
 async function loadViewData(viewId) {
     const pid = currentUser.profileId;
     try {
-        // STUDENT VIEWS
         if (viewId === 'dashboard') {
             const [sched, wait] = await Promise.all([
-                api.student.getSchedule(pid, 'Fall 2024').catch(()=>({items:[]})),
+                api.student.getSchedule(pid, '2026S1').catch(()=>({items:[]})),
                 api.student.getWaitlist(pid).catch(()=>({items:[]}))
             ]);
             document.getElementById('stat-enrolled').textContent = sched.items?.length || 0;
@@ -222,9 +275,8 @@ async function loadViewData(viewId) {
         else if (viewId === 'progress') renderProgress(await api.student.getProgress(pid));
         else if (viewId === 'waitlist') renderWaitlist((await api.student.getWaitlist(pid)).items);
         
-        // FACULTY VIEWS
         else if (viewId === 'offerings') {
-            const data = await api.faculty.getOfferings(pid, '?semester=Fall 2024'); // Fixed to Fall 2024 for demo
+            const data = await api.faculty.getOfferings(pid);
             renderFacultyOfferings(data.items);
         }
         else if (viewId === 'roster' && currentOfferingId) {
@@ -240,7 +292,6 @@ async function loadViewData(viewId) {
             renderFacultyRequests(data.items);
         }
 
-        // ADMIN VIEWS
         else if (viewId === 'admin-users') {
             const data = await api.admin.getUsers();
             renderAdminUsers(data.items);
@@ -275,19 +326,19 @@ function setupCatalogue(pid) {
             const params = `?semester=${encodeURIComponent(sem)}&keyword=${encodeURIComponent(search)}`;
             const data = await api.student.getCatalogue(pid, params);
             container.innerHTML = data.items.map(item => `
-                <div class="course-card glass-panel">
+                <div class="course-card square-card">
                     <div class="course-header">
                         <div>
                             <div class="course-code">${item.course.code}</div>
                             <h3 class="course-title">${item.course.name}</h3>
                         </div>
-                        <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${item.course.credits} Credits</span>
+                        <span class="badge badge-primary">${item.course.credits} Credits</span>
                     </div>
-                    <div class="course-meta" style="margin-top: 1rem;">
-                        <span><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">person</span> ${item.instructorName}</span>
-                        <span><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">chair</span> ${item.availableSeats} / ${item.totalSeats} seats</span>
+                    <div class="course-meta">
+                        <span>Instructor: ${item.instructorName}</span>
+                        <span>Seats: ${item.availableSeats} / ${item.totalSeats}</span>
                     </div>
-                    <p style="font-size: 0.85rem; margin-top: 0.5rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${item.course.description}</p>
+                    <p style="font-size:0.85rem; margin-top:0.25rem;">${item.course.description}</p>
                     <div class="course-actions">
                         ${item.availableSeats > 0 
                             ? `<button class="btn btn-primary btn-sm" onclick="enrollCourse('${item.offeringId}')">Enroll</button>`
@@ -311,14 +362,14 @@ function setupSchedule(pid) {
         try {
             const data = await api.student.getSchedule(pid, sem);
             container.innerHTML = data.items.map(item => `
-                <div class="course-card glass-panel" style="flex-direction: row; align-items: center;">
-                    <div style="flex: 1;">
+                <div class="course-card square-card" style="flex-direction:row; align-items:center;">
+                    <div style="flex:1;">
                         <div class="course-code">${item.course.code}</div>
                         <h3 class="course-title">${item.course.name}</h3>
-                        <p style="font-size: 0.85rem; margin-top: 0.25rem;">Status: <strong>${item.status}</strong></p>
+                        <p style="font-size:0.85rem; margin-top:0.25rem;">Status: <strong>${item.status}</strong></p>
                     </div>
                     <div class="course-actions">
-                        ${item.status === 'ACTIVE' ? `<button class="btn btn-secondary btn-sm" style="color:#ef4444;" onclick="dropCourse('${item.offeringId}')">Drop</button>` : ''}
+                        ${item.status === 'ACTIVE' ? `<button class="btn btn-danger btn-sm" onclick="dropCourse('${item.offeringId}')">Drop</button>` : ''}
                     </div>
                 </div>
             `).join('');
@@ -331,7 +382,7 @@ function setupSchedule(pid) {
 
 function renderProgress(data) {
     document.getElementById('program-info').innerHTML = `
-        <h3>${data.program.name}</h3>
+        <h3 style="margin-bottom:0.25rem;">${data.program.name}</h3>
         <p>Department: ${data.program.department} | Required Credits: ${data.program.requiredCredits}</p>
     `;
     const tbody = document.querySelector('#completed-courses-table tbody');
@@ -345,36 +396,38 @@ function renderProgress(data) {
     `).join('');
     
     document.getElementById('remaining-reqs-list').innerHTML = data.remainingRequirements.map(c => `
-        <li><strong>${c.code}</strong> - ${c.name} (${c.credits} cr)</li>
+        <li style="background-color:var(--color-raised); padding:0.6rem 0.85rem; border:1px solid var(--color-edge);">
+            <strong>${c.code}</strong> ${c.name} (${c.credits} credits)
+        </li>
     `).join('');
 }
 
 function renderWaitlist(items) {
     const container = document.getElementById('waitlist-list');
     container.innerHTML = items.map(item => `
-        <div class="course-card glass-panel">
+        <div class="course-card square-card">
             <div class="course-header">
                 <div>
                     <div class="course-code">${item.course.code}</div>
                     <h3 class="course-title">${item.course.name}</h3>
                 </div>
-                <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; padding: 2px 8px; border-radius: 4px;">Pos: ${item.position}</span>
+                <span class="badge badge-warn">Position ${item.position}</span>
             </div>
-            <p style="font-size: 0.85rem; margin-top: 0.25rem;">Status: ${item.status}</p>
+            <p style="font-size:0.85rem;">Status: ${item.status}</p>
         </div>
     `).join('');
     if (items.length === 0) container.innerHTML = '<p>You are not on any waitlists.</p>';
 }
 
 window.enrollCourse = async (offeringId) => {
-    try { await api.student.enroll(currentUser.profileId, offeringId); showToast('Successfully enrolled!', 'success'); loadViewData('catalogue'); } catch (e) {}
+    try { await api.student.enroll(currentUser.profileId, offeringId); showToast('Successfully enrolled', 'success'); loadViewData('catalogue'); } catch (e) {}
 };
 window.dropCourse = async (offeringId) => {
     if (!confirm('Are you sure you want to drop this course?')) return;
-    try { await api.student.drop(currentUser.profileId, offeringId); showToast('Successfully dropped.', 'success'); loadViewData('schedule'); } catch (e) {}
+    try { await api.student.drop(currentUser.profileId, offeringId); showToast('Successfully dropped', 'success'); loadViewData('schedule'); } catch (e) {}
 };
 window.waitlistCourse = async (offeringId) => {
-    try { await api.student.waitlist(currentUser.profileId, offeringId); showToast('Added to waitlist!', 'success'); loadViewData('catalogue'); } catch (e) {}
+    try { await api.student.waitlist(currentUser.profileId, offeringId); showToast('Added to waitlist', 'success'); loadViewData('catalogue'); } catch (e) {}
 };
 
 /* ==========================================================================
@@ -383,20 +436,20 @@ window.waitlistCourse = async (offeringId) => {
 function renderFacultyOfferings(items) {
     const container = document.getElementById('faculty-offerings-list');
     container.innerHTML = items.map(item => `
-        <div class="course-card glass-panel">
+        <div class="course-card square-card">
             <div class="course-header">
                 <div>
                     <div class="course-code">${item.course.code}</div>
                     <h3 class="course-title">${item.course.name}</h3>
                 </div>
-                <span class="badge" style="background: rgba(139, 92, 246, 0.2); color: #8b5cf6; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${item.semester}</span>
+                <span class="badge badge-primary">${item.semester}</span>
             </div>
-            <div class="course-meta" style="margin-top: 1rem;">
+            <div class="course-meta">
                 <span>Enrolled: ${item.totalSeats - item.availableSeats} / ${item.totalSeats}</span>
             </div>
-            <div class="course-actions" style="margin-top: 1rem; gap: 0.5rem; justify-content: flex-start;">
-                <button class="btn btn-secondary btn-sm" onclick="viewRoster('${item.offeringId}')"><span class="material-symbols-outlined">group</span> Roster</button>
-                <button class="btn btn-secondary btn-sm" onclick="viewGrades('${item.offeringId}')"><span class="material-symbols-outlined">grade</span> Grades</button>
+            <div class="course-actions" style="justify-content:flex-start;">
+                <button class="btn btn-secondary btn-sm" onclick="viewRoster('${item.offeringId}')">Roster</button>
+                <button class="btn btn-secondary btn-sm" onclick="viewGrades('${item.offeringId}')">Grades</button>
             </div>
         </div>
     `).join('');
@@ -421,7 +474,7 @@ function renderFacultyRoster(data) {
             <td>${s.studentId}</td>
             <td>${s.name}</td>
             <td>${s.email}</td>
-            <td><span style="color: ${s.status === 'ACTIVE' ? 'var(--accent)' : 'var(--text-muted)'}">${s.status}</span></td>
+            <td><span style="color: ${s.status === 'ACTIVE' ? 'var(--color-secondary)' : 'var(--color-muted)'}">${s.status}</span></td>
         </tr>
     `).join('');
     if (data.items.length === 0) tbody.innerHTML = '<tr><td colspan="4">No students enrolled.</td></tr>';
@@ -434,11 +487,11 @@ function renderFacultyGrades(data) {
         <tr>
             <td>${s.studentId}</td>
             <td>${s.name}</td>
-            <td><strong>${s.grade || '-'}</strong></td>
+            <td><strong>${s.grade || 'None'}</strong></td>
             <td>
                 <input type="hidden" name="studentId[]" value="${s.studentId}">
-                <select name="grade[]" style="width: 80px; padding: 0.25rem;">
-                    <option value="">--</option>
+                <select name="grade[]" style="width:90px;">
+                    <option value="">Select</option>
                     ${['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F'].map(g => `<option value="${g}" ${s.grade === g ? 'selected' : ''}>${g}</option>`).join('')}
                 </select>
             </td>
@@ -479,7 +532,7 @@ function renderFacultyRequests(items) {
             <td>${req.courseId}</td>
             <td>${req.changeType}</td>
             <td>${req.requestedValue}</td>
-            <td><span style="color: ${req.status === 'APPROVED' ? 'var(--accent)' : (req.status === 'REJECTED' ? '#ef4444' : '#f59e0b')}">${req.status}</span></td>
+            <td><span style="color: ${req.status === 'APPROVED' ? 'var(--color-secondary)' : (req.status === 'REJECTED' ? 'var(--color-danger)' : 'var(--color-warn)')}">${req.status}</span></td>
         </tr>
     `).join('');
 }
@@ -493,7 +546,7 @@ document.getElementById('faculty-request-form')?.addEventListener('submit', asyn
     };
     try {
         await api.faculty.submitRequest(currentUser.profileId, payload);
-        showToast('Request submitted', 'success');
+        showToast('Request submitted successfully', 'success');
         e.target.reset();
         loadViewData('faculty-requests');
     } catch (e) {}
@@ -510,9 +563,9 @@ function renderAdminUsers(items) {
             <td>${u.name}</td>
             <td>${u.email}</td>
             <td>${u.role}</td>
-            <td><span style="color: ${u.status === 'ACTIVE' ? 'var(--accent)' : '#ef4444'}">${u.status}</span></td>
+            <td><span style="color: ${u.status === 'ACTIVE' ? 'var(--color-secondary)' : 'var(--color-danger)'}">${u.status}</span></td>
             <td>
-                ${u.status === 'ACTIVE' ? `<button class="btn btn-secondary btn-sm" onclick="deactivateUser('${u.userId}')">Deactivate</button>` : ''}
+                ${u.status === 'ACTIVE' ? `<button class="btn btn-danger btn-sm" onclick="deactivateUser('${u.userId}')">Deactivate</button>` : ''}
             </td>
         </tr>
     `).join('');
@@ -547,11 +600,11 @@ function renderAdminRequests(items) {
             <td>${req.courseId}</td>
             <td>${req.changeType}</td>
             <td>${req.requestedValue}</td>
-            <td><span style="color: ${req.status === 'APPROVED' ? 'var(--accent)' : (req.status === 'REJECTED' ? '#ef4444' : '#f59e0b')}">${req.status}</span></td>
+            <td><span style="color: ${req.status === 'APPROVED' ? 'var(--color-secondary)' : (req.status === 'REJECTED' ? 'var(--color-danger)' : 'var(--color-warn)')}">${req.status}</span></td>
             <td>
                 ${req.status === 'PENDING' ? `
                     <button class="btn btn-primary btn-sm" onclick="handleAdminRequest('${req.requestId}', 'approve')">Approve</button>
-                    <button class="btn btn-secondary btn-sm" style="color:#ef4444" onclick="handleAdminRequest('${req.requestId}', 'reject')">Reject</button>
+                    <button class="btn btn-danger btn-sm" onclick="handleAdminRequest('${req.requestId}', 'reject')">Reject</button>
                 ` : ''}
             </td>
         </tr>
@@ -562,7 +615,7 @@ window.handleAdminRequest = async (reqId, action) => {
     try {
         if (action === 'approve') await api.admin.approveRequest(reqId);
         else await api.admin.rejectRequest(reqId);
-        showToast(`Request ${action}d successfully`, 'success');
+        showToast(`Request ${action} completed successfully`, 'success');
         loadViewData('admin-requests');
     } catch (e) {}
 };
@@ -573,7 +626,6 @@ function setupAdminReports() {
         const container = document.getElementById('report-content');
         container.innerHTML = '<p>Loading...</p>';
         try {
-            // capacity report requires minUtilization param
             const param = type === 'capacity' ? '?minUtilization=0.8' : '';
             const data = await api.admin.getReport(type + param);
             
@@ -588,7 +640,7 @@ function setupAdminReports() {
                         <thead><tr><th>Faculty</th><th>Department</th><th>Offerings</th><th>Total Students</th></tr></thead>
                         <tbody>
                             ${data.items.map(f => `<tr>
-                                <td><strong>${f.facultyName}</strong><br><small>${f.facultyEmail}</small></td>
+                                <td><strong>${f.facultyName}</strong><br><small style="color:var(--color-muted);">${f.facultyEmail}</small></td>
                                 <td>${f.department}</td>
                                 <td>${f.offeringCount}</td>
                                 <td>${f.totalEnrolledStudents}</td>
@@ -602,8 +654,8 @@ function setupAdminReports() {
                         <thead><tr><th>Course</th><th>Instructor</th><th>Semester</th><th>Enrolled / Capacity</th><th>Utilization</th></tr></thead>
                         <tbody>
                             ${data.items.map(c => `<tr>
-                                <td><strong>${c.code}</strong><br><small>${c.courseName}</small></td>
-                                <td>${c.instructorName || '-'}</td>
+                                <td><strong>${c.code}</strong><br><small style="color:var(--color-muted);">${c.courseName}</small></td>
+                                <td>${c.instructorName || 'None'}</td>
                                 <td>${c.semester}</td>
                                 <td>${c.enrolledCount} / ${c.capacity}</td>
                                 <td>${(c.utilizationRate * 100).toFixed(1)}%</td>
@@ -613,7 +665,7 @@ function setupAdminReports() {
                 `;
             }
         } catch (e) {
-            container.innerHTML = `<p style="color:#ef4444;">Failed to load report.</p>`;
+            container.innerHTML = `<p style="color:var(--color-danger);">Failed to load report.</p>`;
         }
     };
 }
