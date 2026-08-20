@@ -28,33 +28,19 @@ that is consumed by the SPA and is reusable by any future mobile client.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        PRESENTATION TIER                        │
-│                                                                 │
-│   Vanilla JS SPA (frontend/)      Crow REST API (src/presentation/) │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │  JSON / DTOs
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      BUSINESS LOGIC TIER                        │
-│                                                                 │
-│   ┌──────────────────┐        ┌──────────────────┐             │
-│   │  CQRS – Queries  │        │  CQRS – Commands │             │
-│   │  (read-only)     │        │  (state-changing)│             │
-│   └──────────────────┘        └──────────────────┘             │
-│                                                                 │
-│   Domain rules · Sessions (Factory Method) · Observer          │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │  abstract data contracts
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       DATA ACCESS TIER                          │
-│                                                                 │
-│   InnoDB transactions · MySQL repositories · Schema/seed        │
-└─────────────────────────────────────────────────────────────────┘
-```
+### Tier 1: Presentation Tier
+- **Components**: Vanilla JS SPA (`frontend/`), Crow C++ REST API (`src/presentation/api/`)
+- **Communication**: JSON / DTOs flow downward to the Business Logic Tier.
 
+### Tier 2: Business Logic Tier
+- **Components**:
+  - **CQRS – Queries**: Read-only operations.
+  - **CQRS – Commands**: State-changing operations.
+- **Core Concerns**: Domain rules, Sessions (Factory Method), Observer
+- **Communication**: Interacts with the Data Access Tier through abstract data contracts.
+
+### Tier 3: Data Access Tier
+- **Components**: InnoDB transactions, MySQL repositories, Schema/seed data
 ### Design Patterns
 
 | Pattern | Category | Where applied |
