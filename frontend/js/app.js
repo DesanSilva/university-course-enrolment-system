@@ -573,8 +573,45 @@ function setupAdminReports() {
         const container = document.getElementById('report-content');
         container.innerHTML = '<p>Loading...</p>';
         try {
-            const data = await api.admin.getReport(type);
-            container.innerHTML = `<pre style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; overflow-x: auto; color: var(--accent);">${JSON.stringify(data, null, 2)}</pre>`;
+            // capacity report requires minUtilization param
+            const param = type === 'capacity' ? '?minUtilization=0.8' : '';
+            const data = await api.admin.getReport(type + param);
+            
+            if (!data.items || data.items.length === 0) {
+                container.innerHTML = '<p>No data found for this report.</p>';
+                return;
+            }
+
+            if (type === 'faculty-workload') {
+                container.innerHTML = `
+                    <table class="data-table">
+                        <thead><tr><th>Faculty</th><th>Department</th><th>Offerings</th><th>Total Students</th></tr></thead>
+                        <tbody>
+                            ${data.items.map(f => `<tr>
+                                <td><strong>${f.facultyName}</strong><br><small>${f.facultyEmail}</small></td>
+                                <td>${f.department}</td>
+                                <td>${f.offeringCount}</td>
+                                <td>${f.totalEnrolledStudents}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                container.innerHTML = `
+                    <table class="data-table">
+                        <thead><tr><th>Course</th><th>Instructor</th><th>Semester</th><th>Enrolled / Capacity</th><th>Utilization</th></tr></thead>
+                        <tbody>
+                            ${data.items.map(c => `<tr>
+                                <td><strong>${c.code}</strong><br><small>${c.courseName}</small></td>
+                                <td>${c.instructorName || '-'}</td>
+                                <td>${c.semester}</td>
+                                <td>${c.enrolledCount} / ${c.capacity}</td>
+                                <td>${(c.utilizationRate * 100).toFixed(1)}%</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                `;
+            }
         } catch (e) {
             container.innerHTML = `<p style="color:#ef4444;">Failed to load report.</p>`;
         }
