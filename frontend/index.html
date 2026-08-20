@@ -5,12 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NexusEnroll</title>
     <meta name="description" content="University Course Enrolment System">
-    <!-- Google Fonts -->
+    <!-- Google Fonts: Inter and Poppins -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Icons (Material Symbols) -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
     <!-- App Styles -->
     <link rel="stylesheet" href="/css/style.css">
 </head>
@@ -20,179 +18,160 @@
         <div id="toast-container"></div>
 
         <!-- Login View -->
-        <section id="login-view" class="view active">
-            <div class="login-card glass-panel">
-                <div class="brand">
-                    <span class="material-symbols-outlined logo-icon">school</span>
-                    <h1>NexusEnroll</h1>
+        <section id="login-view" class="view active" style="min-height:100vh; display:flex; align-items:center; justify-content:center;">
+            <div class="login-card square-panel" style="width:100%; max-width:400px; padding:2.5rem;">
+                <div class="brand" style="margin-bottom:0.5rem; text-align:center;">
+                    <h1 style="font-size:1.8rem; font-family:var(--font-heading);">NexusEnroll</h1>
                 </div>
-                <p class="subtitle">University Course Enrolment System</p>
+                <p class="subtitle" style="text-align:center; margin-bottom:2rem; font-size:0.9rem;">University Course Enrolment System</p>
                 <form id="login-form">
-                    <div class="form-group">
-                        <label for="userId">User ID</label>
-                        <input type="text" id="userId" name="userId" placeholder="Enter your ID (e.g., admin1, student1)" required autocomplete="off">
+                    <div class="form-group" style="margin-bottom:1.5rem; display:flex; flex-direction:column; gap:0.5rem;">
+                        <label for="userId" style="font-size:0.85rem; font-weight:500;">User ID</label>
+                        <input type="text" id="userId" name="userId" placeholder="Enter ID (e.g. U-STU-001, U-FAC-001, U-ADM-001)" required autocomplete="off">
                     </div>
-                    <button type="submit" class="btn btn-primary" id="login-btn">
+                    <button type="submit" class="btn btn-primary" id="login-btn" style="width:100%; padding:0.75rem;">
                         <span>Sign In</span>
-                        <span class="material-symbols-outlined">arrow_forward</span>
                     </button>
-                    <div id="login-error" class="error-text hidden"></div>
+                    <div id="login-error" class="error-text hidden" style="color:var(--color-danger); font-size:0.85rem; margin-top:1rem; text-align:center;"></div>
                 </form>
             </div>
-            <div class="bg-decoration dec-1"></div>
-            <div class="bg-decoration dec-2"></div>
         </section>
 
-        <!-- Authenticated Shell (Header + Sidebar + Content) -->
+        <!-- Authenticated Shell -->
         <section id="app-shell" class="view hidden">
             <!-- Top Navigation -->
-            <header class="top-nav glass-panel">
+            <header class="top-nav">
                 <div class="brand">
-                    <span class="material-symbols-outlined logo-icon">school</span>
-                    <h2>NexusEnroll</h2>
+                    <h2 style="font-size:1.4rem; margin:0;">NexusEnroll</h2>
                 </div>
-                <div class="user-menu">
-                    <div class="user-info">
-                        <span id="user-display-name" class="name">User</span>
-                        <span id="user-role-badge" class="badge">Role</span>
+                <div class="user-menu" style="display:flex; align-items:center; gap:1rem;">
+                    <div class="user-info" style="display:flex; flex-direction:column; align-items:flex-end;">
+                        <span id="user-display-name" class="name" style="font-weight:600; font-size:0.9rem;">User</span>
+                        <span id="user-role-badge" class="badge badge-primary">Role</span>
                     </div>
-                    <button id="logout-btn" class="btn btn-icon btn-text" title="Logout">
-                        <span class="material-symbols-outlined">logout</span>
+                    <button id="notifications-btn" class="btn btn-secondary btn-sm" style="position:relative;">
+                        <span>Notifications</span>
+                        <span id="notif-badge" class="notif-badge hidden">0</span>
                     </button>
+                    <button id="logout-btn" class="btn btn-secondary btn-sm">
+                        <span>Logout</span>
+                    </button>
+                </div>
+                <!-- Notifications Panel -->
+                <div id="notifications-panel" class="notif-panel square-panel hidden">
+                    <div class="notif-panel-header">
+                        <strong>Notifications</strong>
+                        <button id="notif-close-btn" class="btn btn-text btn-sm">Close</button>
+                    </div>
+                    <ul id="notifications-list" class="notif-list"></ul>
                 </div>
             </header>
 
             <div class="main-layout">
                 <!-- Sidebar Navigation -->
-                <aside class="sidebar glass-panel" id="sidebar-nav">
-                    <!-- Nav items injected dynamically by app.js based on role -->
+                <aside class="sidebar" id="sidebar-nav">
+                    <!-- Nav items injected dynamically by app.js -->
                 </aside>
 
                 <!-- Main Content Area -->
                 <main class="content-area" id="main-content">
                     
-                    <!-- ========================================== -->
-                    <!-- STUDENT VIEWS                              -->
-                    <!-- ========================================== -->
-                    
-                    <!-- Student Dashboard -->
+                    <!-- STUDENT VIEWS -->
                     <div id="student-dashboard" class="sub-view hidden">
                         <header class="view-header">
                             <h2>Dashboard</h2>
-                            <p>Welcome back! Here's an overview of your studies.</p>
+                            <p>Overview of academic activities.</p>
                         </header>
                         <div class="dashboard-grid">
-                            <div class="stat-card glass-panel">
-                                <span class="material-symbols-outlined stat-icon">book</span>
-                                <div class="stat-details">
-                                    <h3 id="stat-enrolled">0</h3>
-                                    <p>Active Enrolments</p>
-                                </div>
+                            <div class="stat-card square-card">
+                                <h3 id="stat-enrolled">0</h3>
+                                <p>Active Enrolments</p>
                             </div>
-                            <div class="stat-card glass-panel">
-                                <span class="material-symbols-outlined stat-icon">hourglass_empty</span>
-                                <div class="stat-details">
-                                    <h3 id="stat-waitlisted">0</h3>
-                                    <p>Waitlisted Courses</p>
-                                </div>
+                            <div class="stat-card square-card">
+                                <h3 id="stat-waitlisted">0</h3>
+                                <p>Waitlisted Courses</p>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Catalogue View -->
                     <div id="student-catalogue" class="sub-view hidden">
                         <header class="view-header">
                             <h2>Course Catalogue</h2>
-                            <p>Browse and enroll in available courses.</p>
+                            <p>Browse and enroll in available course offerings.</p>
                         </header>
-                        <div class="filters glass-panel">
-                            <input type="text" id="cat-search" placeholder="Search by course code or name..." class="filter-input">
-                            <select id="cat-semester" class="filter-select">
-                                <option value="Fall 2024">Fall 2024</option>
-                                <option value="Spring 2025">Spring 2025</option>
+                        <div class="filters square-panel">
+                            <input type="text" id="cat-search" placeholder="Search course code or name..." class="filter-input">
+                            <select id="cat-semester" class="filter-select" style="width:200px;">
+                                <option value="2026S1">2026 Semester 1</option>
+                                <option value="2025S2">2025 Semester 2</option>
                             </select>
                             <button id="btn-search-cat" class="btn btn-secondary">Search</button>
                         </div>
-                        <div id="catalogue-list" class="data-grid">
-                            <!-- Populated by JS -->
-                        </div>
+                        <div id="catalogue-list" class="data-grid"></div>
                     </div>
 
-                    <!-- Schedule View -->
                     <div id="student-schedule" class="sub-view hidden">
                         <header class="view-header">
                             <h2>My Schedule</h2>
-                            <p>Your current course enrollments.</p>
+                            <p>Your current semester enrolments.</p>
                         </header>
-                        <div class="filters glass-panel">
-                            <select id="sched-semester" class="filter-select">
-                                <option value="Fall 2024">Fall 2024</option>
-                                <option value="Spring 2025">Spring 2025</option>
+                        <div class="filters square-panel">
+                            <select id="sched-semester" class="filter-select" style="width:200px;">
+                                <option value="2026S1">2026 Semester 1</option>
+                                <option value="2025S2">2025 Semester 2</option>
                             </select>
                             <button id="btn-load-sched" class="btn btn-secondary">Load</button>
                         </div>
-                        <div id="schedule-list" class="cards-list">
-                            <!-- Populated by JS -->
-                        </div>
+                        <div id="schedule-list" class="cards-list"></div>
                     </div>
 
-                    <!-- Progress View -->
                     <div id="student-progress" class="sub-view hidden">
                         <header class="view-header">
                             <h2>Academic Progress</h2>
-                            <p>Track your degree requirements.</p>
+                            <p>Degree completion requirements status.</p>
                         </header>
-                        <div class="progress-container glass-panel">
-                            <div id="program-info" class="program-header">
-                                <!-- Populated by JS -->
-                            </div>
-                            <div class="progress-sections">
-                                <div class="progress-section">
+                        <div class="progress-container square-panel" style="padding:1.5rem;">
+                            <div id="program-info" style="margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid var(--color-edge);"></div>
+                            <div class="progress-sections" style="display:grid; grid-template-columns:1fr 1fr; gap:2rem;">
+                                <div>
                                     <h3>Completed Courses</h3>
-                                    <table class="data-table" id="completed-courses-table">
+                                    <table class="data-table" id="completed-courses-table" style="margin-top:1rem;">
                                         <thead><tr><th>Code</th><th>Name</th><th>Credits</th><th>Grade</th></tr></thead>
                                         <tbody></tbody>
                                     </table>
                                 </div>
-                                <div class="progress-section">
+                                <div>
                                     <h3>Remaining Requirements</h3>
-                                    <ul id="remaining-reqs-list" class="req-list"></ul>
+                                    <ul id="remaining-reqs-list" style="list-style:none; padding:0; margin-top:1rem; display:flex; flex-direction:column; gap:0.5rem;"></ul>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Waitlist View -->
                     <div id="student-waitlist" class="sub-view hidden">
                         <header class="view-header">
                             <h2>My Waitlist</h2>
-                            <p>Courses you are currently waiting for.</p>
+                            <p>Courses pending seat availability.</p>
                         </header>
-                        <div id="waitlist-list" class="cards-list">
-                            <!-- Populated by JS -->
-                        </div>
+                        <div id="waitlist-list" class="cards-list"></div>
                     </div>
 
-                    <!-- ========================================== -->
-                    <!-- FACULTY VIEWS                              -->
-                    <!-- ========================================== -->
+                    <!-- FACULTY VIEWS -->
                     <div id="faculty-offerings" class="sub-view hidden">
                         <header class="view-header">
                             <h2>My Offerings</h2>
-                            <p>Courses you are teaching and managing.</p>
+                            <p>Assigned teaching courses.</p>
                         </header>
-                        <div id="faculty-offerings-list" class="data-grid">
-                            <!-- Populated by JS -->
-                        </div>
+                        <div id="faculty-offerings-list" class="data-grid"></div>
                     </div>
 
                     <div id="faculty-roster" class="sub-view hidden">
                         <header class="view-header">
                             <h2>Course Roster</h2>
                             <p id="roster-course-info">Loading...</p>
-                            <button class="btn btn-secondary btn-sm" onclick="handleRoute('offerings')"><span class="material-symbols-outlined">arrow_back</span> Back</button>
+                            <button class="btn btn-secondary btn-sm" onclick="handleRoute('offerings')" style="margin-top:0.5rem;">Back to Offerings</button>
                         </header>
-                        <div class="glass-panel" style="padding: 1.5rem;">
+                        <div class="square-panel" style="padding:1.5rem;">
                             <table class="data-table" id="roster-table">
                                 <thead><tr><th>Student ID</th><th>Name</th><th>Email</th><th>Status</th></tr></thead>
                                 <tbody></tbody>
@@ -204,15 +183,15 @@
                         <header class="view-header">
                             <h2>Manage Grades</h2>
                             <p id="grades-course-info">Loading...</p>
-                            <button class="btn btn-secondary btn-sm" onclick="handleRoute('offerings')"><span class="material-symbols-outlined">arrow_back</span> Back</button>
+                            <button class="btn btn-secondary btn-sm" onclick="handleRoute('offerings')" style="margin-top:0.5rem;">Back to Offerings</button>
                         </header>
-                        <div class="glass-panel" style="padding: 1.5rem;">
+                        <div class="square-panel" style="padding:1.5rem;">
                             <form id="grade-submit-form">
                                 <table class="data-table" id="grades-table">
                                     <thead><tr><th>Student ID</th><th>Name</th><th>Current Grade</th><th>Assign Grade</th></tr></thead>
                                     <tbody></tbody>
                                 </table>
-                                <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end;">
+                                <div style="margin-top:1.5rem; display:flex; justify-content:flex-end;">
                                     <button type="submit" class="btn btn-primary">Submit Grades</button>
                                 </div>
                             </form>
@@ -222,30 +201,30 @@
                     <div id="faculty-requests" class="sub-view hidden">
                         <header class="view-header">
                             <h2>Change Requests</h2>
-                            <p>Request capacity changes for your courses.</p>
+                            <p>Submit capacity requests for your offerings.</p>
                         </header>
-                        <div class="glass-panel" style="padding: 1.5rem; margin-bottom: 2rem;">
-                            <form id="faculty-request-form" style="display: flex; gap: 1rem; align-items: flex-end;">
+                        <div class="square-panel" style="padding:1.5rem; margin-bottom:2rem;">
+                            <form id="faculty-request-form" style="display:flex; gap:1rem; align-items:flex-end;">
                                 <div style="flex:1;">
-                                    <label>Course ID</label>
-                                    <input type="text" id="req-course" placeholder="e.g. COURSE-CS101" required class="search-input" style="width:100%; margin-top:0.5rem;">
+                                    <label style="font-size:0.85rem;">Course ID</label>
+                                    <input type="text" id="req-course" placeholder="e.g. COURSE-CS101" required style="margin-top:0.3rem;">
                                 </div>
                                 <div style="flex:1;">
-                                    <label>Type</label>
-                                    <select id="req-type" class="filter-select" style="width:100%; margin-top:0.5rem;">
+                                    <label style="font-size:0.85rem;">Type</label>
+                                    <select id="req-type" style="margin-top:0.3rem;">
                                         <option value="CAPACITY">CAPACITY</option>
                                     </select>
                                 </div>
                                 <div style="flex:1;">
-                                    <label>New Value</label>
-                                    <input type="number" id="req-value" placeholder="e.g. 50" required class="search-input" style="width:100%; margin-top:0.5rem;">
+                                    <label style="font-size:0.85rem;">New Capacity</label>
+                                    <input type="number" id="req-value" placeholder="e.g. 50" required style="margin-top:0.3rem;">
                                 </div>
                                 <div>
                                     <button type="submit" class="btn btn-primary">Submit Request</button>
                                 </div>
                             </form>
                         </div>
-                        <div class="glass-panel" style="padding: 1.5rem;">
+                        <div class="square-panel" style="padding:1.5rem;">
                             <table class="data-table" id="faculty-requests-table">
                                 <thead><tr><th>Request ID</th><th>Course ID</th><th>Type</th><th>Value</th><th>Status</th></tr></thead>
                                 <tbody></tbody>
@@ -253,35 +232,24 @@
                         </div>
                     </div>
 
-                    <!-- ========================================== -->
-                    <!-- ADMIN VIEWS                                -->
-                    <!-- ========================================== -->
+                    <!-- ADMIN VIEWS -->
                     <div id="admin-dashboard" class="sub-view hidden">
                         <header class="view-header">
                             <h2>Administrator Dashboard</h2>
-                            <p>System overview and quick actions.</p>
+                            <p>System control and administrative functions.</p>
                         </header>
                         <div class="dashboard-grid">
-                            <div class="stat-card glass-panel" onclick="handleRoute('admin-users')" style="cursor:pointer;">
-                                <span class="material-symbols-outlined stat-icon">group</span>
-                                <div class="stat-details">
-                                    <h3>Users</h3>
-                                    <p>Manage Accounts</p>
-                                </div>
+                            <div class="stat-card square-card" onclick="handleRoute('admin-users')" style="cursor:pointer;">
+                                <h3>Users</h3>
+                                <p>Manage System Accounts</p>
                             </div>
-                            <div class="stat-card glass-panel" onclick="handleRoute('admin-courses')" style="cursor:pointer;">
-                                <span class="material-symbols-outlined stat-icon">library_books</span>
-                                <div class="stat-details">
-                                    <h3>Courses</h3>
-                                    <p>Manage Curriculum</p>
-                                </div>
+                            <div class="stat-card square-card" onclick="handleRoute('admin-courses')" style="cursor:pointer;">
+                                <h3>Courses</h3>
+                                <p>Manage Curriculum</p>
                             </div>
-                            <div class="stat-card glass-panel" onclick="handleRoute('admin-reports')" style="cursor:pointer;">
-                                <span class="material-symbols-outlined stat-icon">bar_chart</span>
-                                <div class="stat-details">
-                                    <h3>Reports</h3>
-                                    <p>System Analytics</p>
-                                </div>
+                            <div class="stat-card square-card" onclick="handleRoute('admin-reports')" style="cursor:pointer;">
+                                <h3>Reports</h3>
+                                <p>Analytics and Reports</p>
                             </div>
                         </div>
                     </div>
@@ -289,9 +257,9 @@
                     <div id="admin-users" class="sub-view hidden">
                         <header class="view-header">
                             <h2>User Management</h2>
-                            <p>View and manage all system users.</p>
+                            <p>System user accounts list.</p>
                         </header>
-                        <div class="glass-panel" style="padding: 1.5rem;">
+                        <div class="square-panel" style="padding:1.5rem;">
                             <table class="data-table" id="admin-users-table">
                                 <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
                                 <tbody></tbody>
@@ -302,9 +270,9 @@
                     <div id="admin-courses" class="sub-view hidden">
                         <header class="view-header">
                             <h2>Course Management</h2>
-                            <p>View all courses in the system.</p>
+                            <p>System courses catalogue.</p>
                         </header>
-                        <div class="glass-panel" style="padding: 1.5rem;">
+                        <div class="square-panel" style="padding:1.5rem;">
                             <table class="data-table" id="admin-courses-table">
                                 <thead><tr><th>Code</th><th>Name</th><th>Department</th><th>Credits</th></tr></thead>
                                 <tbody></tbody>
@@ -315,9 +283,9 @@
                     <div id="admin-requests" class="sub-view hidden">
                         <header class="view-header">
                             <h2>Change Requests Inbox</h2>
-                            <p>Review and approve faculty requests.</p>
+                            <p>Review faculty capacity change requests.</p>
                         </header>
-                        <div class="glass-panel" style="padding: 1.5rem;">
+                        <div class="square-panel" style="padding:1.5rem;">
                             <table class="data-table" id="admin-requests-table">
                                 <thead><tr><th>Faculty ID</th><th>Course ID</th><th>Type</th><th>Value</th><th>Status</th><th>Actions</th></tr></thead>
                                 <tbody></tbody>
@@ -328,10 +296,10 @@
                     <div id="admin-reports" class="sub-view hidden">
                         <header class="view-header">
                             <h2>System Reports</h2>
-                            <p>Analytics and enrollment data.</p>
+                            <p>Analytics reports interface.</p>
                         </header>
-                        <div class="filters glass-panel">
-                            <select id="report-type" class="filter-select">
+                        <div class="filters square-panel">
+                            <select id="report-type" class="filter-select" style="width:220px;">
                                 <option value="enrolment">Enrolment Summary</option>
                                 <option value="faculty-workload">Faculty Workload</option>
                                 <option value="course-popularity">Course Popularity</option>
@@ -339,9 +307,9 @@
                             </select>
                             <button id="btn-load-report" class="btn btn-secondary">Load Report</button>
                         </div>
-                        <div class="glass-panel" style="padding: 1.5rem;">
+                        <div class="square-panel" style="padding:1.5rem;">
                             <div id="report-content">
-                                <p style="color: var(--text-muted);">Select a report and click Load.</p>
+                                <p style="color:var(--color-muted);">Select a report and click Load Report.</p>
                             </div>
                         </div>
                     </div>
