@@ -48,6 +48,8 @@ that is consumed by the SPA and is reusable by any future mobile client.
 | **Command** | Behavioural | Every state-changing operation (`EnrollStudentCommand`, `DropCourseCommand`, `SubmitGradesCommand`, `OverrideEnrollmentCommand`, …) implements `ICommand::execute()`. |
 | **Observer** | Behavioural | `NotificationPublisher` broadcasts `CourseSeatAvailable` events to `INotificationObserver` implementations (e.g. `WaitlistNotificationObserver`) after a successful drop transaction. |
 | **Factory Method** | Creational | `SessionCreator` hierarchy (`StudentSessionCreator`, `FacultySessionCreator`, `AdministratorSessionCreator`) produces role-specific `UserSession` subtypes without scattering role checks into route code. |
+| **Facade** | Structural | `MySqlDataContext` implements all 8 data-access contracts (`IUserStore`, `ICourseStore`, `IEnrollmentStore`, …) behind a single unified interface, encapsulating the connection pool and transaction lifecycle. |
+| **Pimpl Idiom** | Structural / C++ | `MySqlDataContext` hides its `MYSQL*` handles and connection-pool internals in an opaque `Implementation` struct, restricting `mysql.h` to the `.cpp` translation unit and preventing low-level types from leaking into the Business Logic Tier. |
 
 ---
 
